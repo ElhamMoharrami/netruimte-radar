@@ -143,11 +143,17 @@ describe('POST /api/runs/demo — full autonomous pipeline', () => {
   });
 });
 
-// ─── Trigger attribution ──────────────────────────────────────────────────
+// ─── Trigger attribution — full trace ────────────────────────────────────
 //
 // Regression guard: production scans triggered from the live UI / scheduled
 // flow were being persisted with `trigger: "demo"`, polluting the `/runs`
 // history operators rely on to answer "how did the cron do last night?".
+//
+// Each test follows the trigger through EVERY sink so a future regression
+// at any layer (route → service → run history → activity log) fails loudly:
+//   1. RunHistory row      (routes → AutonomousRunService.finalizeRun)
+//   2. SCAN_STARTED entry  (AutonomousRunService.run → activity metadata + message)
+//   3. SCAN_COMPLETED entry(AutonomousRunService.finalizeRun → metadata.summary)
 //
 // Contract:
 //   POST /api/runs/demo                       → 'manual'
@@ -155,6 +161,12 @@ describe('POST /api/runs/demo — full autonomous pipeline', () => {
 //   POST /api/runs/scheduled (valid token)    → 'scheduled'
 //   POST /api/runs/scheduled?offline=true     → 'offline'
 //   POST /api/demo/overnight-scan             → 'demo'
+
+interface ActivityRow {
+  eventType: string;
+  message: string;
+  metadata: Record<string, unknown> | null;
+}
 
 describe('run trigger attribution', () => {
   let db: Db;
@@ -172,27 +184,62 @@ describe('run trigger attribution', () => {
     return body.data[0]!;
   }
 
-  it('POST /api/runs/demo → persists trigger="manual" (live UI scan)', async () => {
+  async function activity(app: ReturnType<typeof createApp>): Promise<ActivityRow[]> {
+    const res = await app.request('/api/activity/recent?limit=500');
+    const body = (await res.json()) as { data: ActivityRow[] };
+    return body.data;
+  }
+
+  /**
+   * Prove the trigger appears verbatim in all three sinks fed by a single
+   * `AutonomousRunService.run()` call. If any assertion fires, the trigger
+   * was dropped or rewritten somewhere along the route → service → log path.
+   */
+  async function assertTriggerTracesTo(
+    app: ReturnType<typeof createApp>,
+    expected: 'manual' | 'scheduled' | 'demo' | 'offline',
+    expectedNotes: string | null,
+  ) {
+    const run = await latestRun(app);
+    expect(run.trigger, 'RunHistory.trigger').toBe(expected);
+    expect(run.notes, 'RunHistory.notes').toBe(expectedNotes);
+
+    const entries = await activity(app);
+    const started = entries.find((e) => e.eventType === 'SCAN_STARTED');
+    const completed = entries.find((e) => e.eventType === 'SCAN_COMPLETED');
+    expect(started, 'SCAN_STARTED activity entry').toBeTruthy();
+    expect(completed, 'SCAN_COMPLETED activity entry').toBeTruthy();
+
+    // SCAN_STARTED writes trigger to both message text and metadata.
+    expect(started!.message, 'SCAN_STARTED message text').toContain(`trigger=${expected}`);
+    expect(
+      (started!.metadata as { trigger?: string } | null)?.trigger,
+      'SCAN_STARTED metadata.trigger',
+    ).toBe(expected);
+
+    // SCAN_COMPLETED carries the full summary — trigger is nested one level in.
+    const completedSummary = (completed!.metadata as { summary?: { trigger?: string } } | null)
+      ?.summary;
+    expect(completedSummary?.trigger, 'SCAN_COMPLETED metadata.summary.trigger').toBe(expected);
+  }
+
+  it('POST /api/runs/demo → "manual" traces to RunHistory + both activity entries', async () => {
     const ctx = buildContext(db);
     const app = createApp(ctx);
     const res = await app.request('/api/runs/demo', { method: 'POST' });
     expect(res.status).toBe(200);
-    const run = await latestRun(app);
-    expect(run.trigger).toBe('manual');
-    expect(run.notes).toBeNull();
+    await assertTriggerTracesTo(app, 'manual', null);
   });
 
-  it('POST /api/runs/demo?offline=true → persists trigger="offline"', async () => {
+  it('POST /api/runs/demo?offline=true → "offline" traces to RunHistory + both activity entries', async () => {
     const ctx = buildContext(db);
     const app = createApp(ctx);
     const res = await app.request('/api/runs/demo?offline=true', { method: 'POST' });
     expect(res.status).toBe(200);
-    const run = await latestRun(app);
-    expect(run.trigger).toBe('offline');
-    expect(run.notes).toBe('offline mode');
+    await assertTriggerTracesTo(app, 'offline', 'offline mode');
   });
 
-  it('POST /api/runs/scheduled with valid token → persists trigger="scheduled"', async () => {
+  it('POST /api/runs/scheduled (valid token) → "scheduled" traces to RunHistory + both activity entries', async () => {
     const ctx = buildContext(db, { serviceToken: 'secret' });
     const app = createApp(ctx);
     const res = await app.request('/api/runs/scheduled', {
@@ -200,12 +247,10 @@ describe('run trigger attribution', () => {
       headers: { 'x-service-token': 'secret' },
     });
     expect(res.status).toBe(200);
-    const run = await latestRun(app);
-    expect(run.trigger).toBe('scheduled');
-    expect(run.notes).toBeNull();
+    await assertTriggerTracesTo(app, 'scheduled', null);
   });
 
-  it('POST /api/runs/scheduled?offline=true with valid token → persists trigger="offline"', async () => {
+  it('POST /api/runs/scheduled?offline=true (valid token) → "offline" traces to RunHistory + both activity entries', async () => {
     const ctx = buildContext(db, { serviceToken: 'secret' });
     const app = createApp(ctx);
     const res = await app.request('/api/runs/scheduled?offline=true', {
@@ -213,19 +258,15 @@ describe('run trigger attribution', () => {
       headers: { 'x-service-token': 'secret' },
     });
     expect(res.status).toBe(200);
-    const run = await latestRun(app);
-    expect(run.trigger).toBe('offline');
-    expect(run.notes).toBe('offline mode');
+    await assertTriggerTracesTo(app, 'offline', 'offline mode');
   });
 
-  it('POST /api/demo/overnight-scan → persists trigger="demo" (not "scheduled")', async () => {
+  it('POST /api/demo/overnight-scan → "demo" traces to RunHistory + both activity entries (not "scheduled")', async () => {
     const ctx = buildContext(db);
     const app = createApp(ctx);
     const res = await app.request('/api/demo/overnight-scan', { method: 'POST' });
     expect(res.status).toBe(200);
-    const run = await latestRun(app);
-    expect(run.trigger).toBe('demo');
-    expect(run.notes).toBe('demo overnight scan');
+    await assertTriggerTracesTo(app, 'demo', 'demo overnight scan');
   });
 
   it('POST /api/runs/scheduled without token → 401 (no run persisted)', async () => {
