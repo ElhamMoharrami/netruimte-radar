@@ -1,0 +1,27 @@
+{
+  "name": "netruimte-radar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Autonomous early-warning agent for Dutch businesses facing future grid constraints.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "packageManager": "pnpm@12.6.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" run dev",
+    "dev:api": "pnpm --filter @netruimte/api dev",
+    "dev:web": "pnpm --filter @netruimte/web dev",
+    "build": "pnpm -r --filter \"./packages/*\" run build && pnpm -r --filter \"./apps/*\" run build",
+    "typecheck": "pnpm -r run typecheck && tsc -p netlify/tsconfig.json",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,css,html}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,css,html}\""
+  },
+  "devDependencies": {
+    "@netlify/functions": "^2.8.2",
+    "@types/node": "^22.10.5",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3"
+  }
+}

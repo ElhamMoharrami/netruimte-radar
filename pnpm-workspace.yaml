@@ -1,0 +1,8 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# esbuild ships a native postinstall to unpack the platform binary. It's
+# maintained by the Vite team and used by Vite/Vitest — safe to allow.
+allowBuilds:
+  esbuild: true

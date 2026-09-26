@@ -1,0 +1,52 @@
+# ==============================================================================
+# Netlify deployment configuration for Netruimte Radar.
+#
+# Frontend: React SPA built with Vite → served from apps/web/dist
+# Backend:  Hono API exposed via a single Netlify Function that reuses the
+#           existing app.ts + context.ts unchanged.
+#
+# All server-side environment variables (SERVICE_TOKEN, APIFY_TOKEN,
+# *_API_KEY, N8N_WEBHOOK_TOKEN, NOTIFICATION_ALLOWLIST, DEMO_MODE, …) MUST
+# be set on the Netlify site (Site configuration → Environment variables).
+# Nothing here is exposed to the frontend bundle.
+# ==============================================================================
+
+[build]
+  # `corepack enable` guarantees pnpm is on PATH even on older build images.
+  # `--frozen-lockfile` keeps CI builds reproducible.
+  # `pnpm build` compiles packages/* then apps/* (apps/web produces the
+  # static bundle that Netlify serves).
+  command   = "corepack enable && pnpm install --frozen-lockfile && pnpm build"
+  publish   = "apps/web/dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  # Overrides the repo's .nvmrc (v25.2.1 — Netlify build image doesn't ship
+  # Node 25). Node 22 has `node:sqlite` (added in 22.5) and native fetch.
+  NODE_VERSION = "22"
+
+[functions]
+  # esbuild bundles workspace imports (apps/api/src/*, packages/core/*,
+  # packages/shared/*) into the function output.
+  node_bundler = "esbuild"
+  # Ship the AI SDKs as external deps so the bundle stays small; they're
+  # only loaded when a matching AI_PROVIDER is set.
+  external_node_modules = [
+    "@anthropic-ai/sdk",
+    "openai",
+    "@google/generative-ai",
+  ]
+
+# ─── Routing ─────────────────────────────────────────────────────────────────
+# The Netlify Function itself declares `config.path = '/api/*'` (see
+# `netlify/functions/api.mts`), so Netlify routes every /api/* request to
+# the function BEFORE checking the redirects below. That means the SPA
+# catch-all cannot swallow API traffic.
+#
+# The catch-all below serves index.html for every OTHER path so React
+# Router routes (/radar, /opportunities/:id, /runs, /demo) work on hard
+# refresh instead of 404-ing.
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200

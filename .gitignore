@@ -1,0 +1,17 @@
+node_modules
+dist
+build
+.turbo
+.cache
+coverage
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.vite
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+.env.example
