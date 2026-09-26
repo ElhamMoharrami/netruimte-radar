@@ -129,11 +129,16 @@ context.ts unchanged.
 ### Files added for deployment
 
 - `netlify.toml` — build command, publish directory, functions directory, SPA fallback.
-- `netlify/functions/api.mts` — one-file adapter. Constructs the same
+- `netlify/functions/api.ts` — one-file adapter. Constructs the same
   `AppContext` + `createApp(ctx)` the local server uses, adds a `/api/health`
   alias, and hands each `Request` straight to `app.fetch`. Declarative
   `config.path = '/api/*'` catches every API route without any manual
-  redirect gymnastics.
+  redirect gymnastics. (`.ts` extension picked deliberately — Netlify's
+  bundler defaults to esbuild for `.ts`, which inlines workspace packages
+  like `@netruimte/shared`; `.mts` would default to `nft` which doesn't
+  ship workspace-linked deps and would leave them missing at runtime.)
+- `netlify/functions/package.json` — 2-line `{"type": "module"}` so the
+  `.ts` function is treated as ESM.
 
 ### Netlify build settings
 
@@ -232,7 +237,7 @@ Failure modes (each has a clear signature):
 | `/api/runs/scheduled` → 503 | `SERVICE_TOKEN` is not set on Netlify. |
 | `/api/runs/scheduled` → 401 | `SERVICE_TOKEN` set but the request header is missing / doesn't match. |
 | Every SPA route 404 | `netlify.toml` catch-all not deployed — verify redirects in the Netlify UI. |
-| Frontend loads but `/api/*` returns index.html | Function didn't deploy — check "Functions" tab; ensure `netlify/functions/api.mts` is present. |
+| Frontend loads but `/api/*` returns index.html | Function didn't deploy — check "Functions" tab; ensure `netlify/functions/api.ts` is present. |
 
 ### Local test with Netlify CLI (optional)
 

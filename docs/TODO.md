@@ -81,7 +81,8 @@ Living checklist. Updated as each step is completed.
 ## Netlify deployment — DONE
 
 - [x] `netlify.toml` — build command, publish `apps/web/dist`, functions `netlify/functions`, Node 22, SPA fallback
-- [x] `netlify/functions/api.mts` — thin `Request → app.fetch` adapter, declarative `config.path = '/api/*'`, `/api/health` alias
+- [x] `netlify/functions/api.ts` (+ `netlify/functions/package.json` `type: module`) — thin `Request → app.fetch` adapter, declarative `config.path = '/api/*'`, `/api/health` alias. `.ts` picked so Netlify picks esbuild (inlines workspace packages); `.mts` would default to `nft` which doesn't ship workspace-linked deps.
+- [x] Root `package.json` `dependencies` promoted `hono`, `zod`, and the three AI SDKs — required so pnpm creates root-level symlinks that Netlify's function bundler can resolve.
 - [x] `netlify/tsconfig.json` — typechecked via root `pnpm typecheck`
 - [x] `@netlify/functions` devDep for Config types
 - [x] All 13 environment variables documented in README (server-side only; frontend never sees them)
