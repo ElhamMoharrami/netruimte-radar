@@ -1,3 +1,4 @@
+import { classifyByUrl } from './sourceClass.js';
 import type { DiscoveredSource, SourceDiscoveryProvider } from './types.js';
 
 /**
@@ -359,6 +360,11 @@ export class ApifySourceDiscoveryProvider implements SourceDiscoveryProvider {
       discoveredAt,
       publishedAt,
       sourceType: item.sourceType ?? 'news_article',
+      // Auto-classify by URL host. Grid-operator pages (liander.nl,
+      // enexis.nl, stedin.net + subdomains) → 'grid_update'; everything else
+      // → 'business_signal'. Kept in the generic provider so per-URL routing
+      // works even when the crawler follows redirects.
+      sourceClass: classifyByUrl(url),
       provider: this.name,
     };
   }

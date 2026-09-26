@@ -12,3 +12,13 @@ export {
   type ExtractorFactoryOptions,
   type ExtractorFactoryResult,
 } from './factory.js';
+export {
+  RuleBasedGridUpdateExtractor,
+  detectOperatorFromUrl,
+  detectUpdateType,
+  detectRegions,
+  type GridUpdateExtractor,
+  type GridUpdateExtractorInput,
+  type GridUpdateExtraction,
+  type GridOperator,
+} from './gridUpdateExtractor.js';

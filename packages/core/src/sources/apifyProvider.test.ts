@@ -45,7 +45,9 @@ describe('ApifySourceDiscoveryProvider — actor input', () => {
   it('builds the same JSON body we verified manually', () => {
     const p = new ApifySourceDiscoveryProvider({
       token: 'sk-test',
-      actorId: 'aYG0l9s7dbB7j3gbS',
+      // Synthetic id — the fake fetch never validates it. Must NOT match any
+      // real APIFY_ACTOR_ID env value or Netlify's secret scanner rejects the build.
+      actorId: 'actor_fake_test_id',
       startUrls: [
         'https://newsroom.postnl.nl/en-NL/259192-postnl-aims-to-develop-charging-hubs-for-truck-transport/',
       ],
@@ -69,7 +71,9 @@ describe('ApifySourceDiscoveryProvider — actor input', () => {
   it('passes actorInput verbatim when supplied (overrides startUrls)', () => {
     const p = new ApifySourceDiscoveryProvider({
       token: 'sk-test',
-      actorId: 'aYG0l9s7dbB7j3gbS',
+      // Synthetic id — the fake fetch never validates it. Must NOT match any
+      // real APIFY_ACTOR_ID env value or Netlify's secret scanner rejects the build.
+      actorId: 'actor_fake_test_id',
       startUrls: ['https://ignored.example/'],
       actorInput: { startUrls: [{ url: 'https://kept.example/' }], custom: true },
     });
@@ -113,7 +117,9 @@ describe('ApifySourceDiscoveryProvider — end-to-end against the PostNL fixture
     const events: Array<{ event: string; meta: Record<string, unknown> }> = [];
     const p = new ApifySourceDiscoveryProvider({
       token: 'sk-test',
-      actorId: 'aYG0l9s7dbB7j3gbS',
+      // Synthetic id — the fake fetch never validates it. Must NOT match any
+      // real APIFY_ACTOR_ID env value or Netlify's secret scanner rejects the build.
+      actorId: 'actor_fake_test_id',
       startUrls: [POSTNL_FIXTURE.url],
       fetchImpl,
       pollIntervalMs: 1,

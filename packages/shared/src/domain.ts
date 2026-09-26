@@ -77,6 +77,7 @@ export const ActivityEventType = z.enum([
   'OPPORTUNITY_REJECTED',
   'SCAN_COMPLETED',
   'ACTION_DISPATCHED',
+  'GRID_UPDATE_DETECTED',
 ]);
 export type ActivityEventType = z.infer<typeof ActivityEventType>;
 

@@ -14,6 +14,8 @@ import {
 } from '@netruimte/shared';
 import { ActivityLogger } from '../activity/activityLogger.js';
 import type { EvidenceExtractor, ExtractionResult } from '../extraction/types.js';
+import type { GridUpdateExtractor } from '../extraction/gridUpdateExtractor.js';
+import { RuleBasedGridUpdateExtractor } from '../extraction/gridUpdateExtractor.js';
 import type { GridContextProvider } from '../grid/types.js';
 import { PolicyEngine, type PolicyDecision } from '../policy/index.js';
 import { OpportunityScoringService, type ScoringResult } from '../scoring/index.js';
@@ -25,6 +27,13 @@ export interface AutonomousRunDeps {
   repos: Repositories;
   sources: SourceDiscoveryProvider;
   extractor: EvidenceExtractor;
+  /**
+   * Optional dedicated extractor for `sourceClass: 'grid_update'` sources
+   * (Liander / Enexis / Stedin capacity pages). Defaults to a rule-based
+   * implementation. Independent of `grid` — the municipality-level
+   * GridContextProvider is untouched.
+   */
+  gridUpdateExtractor?: GridUpdateExtractor;
   grid: GridContextProvider;
   scoring?: OpportunityScoringService;
   policy?: PolicyEngine;
@@ -52,6 +61,8 @@ export interface AutonomousRunSummary {
   signalsDetected: number;
   opportunitiesCreated: number;
   opportunitiesReassessed: number;
+  /** Count of sourceClass=grid_update sources that were extracted this run. */
+  gridUpdatesDetected: number;
   decisions: Record<DecisionType, number>;
   actionsDispatched: number;
   actionsBlocked: number;
@@ -77,12 +88,14 @@ export class AutonomousRunService {
   private readonly logger: ActivityLogger;
   private readonly scoring: OpportunityScoringService;
   private readonly policy: PolicyEngine;
+  private readonly gridUpdateExtractor: GridUpdateExtractor;
   private readonly now: () => string;
 
   constructor(private readonly deps: AutonomousRunDeps) {
     this.logger = new ActivityLogger(deps.repos.activity);
     this.scoring = deps.scoring ?? new OpportunityScoringService();
     this.policy = deps.policy ?? new PolicyEngine();
+    this.gridUpdateExtractor = deps.gridUpdateExtractor ?? new RuleBasedGridUpdateExtractor();
     this.now = deps.now ?? nowIso;
   }
 
@@ -110,6 +123,7 @@ export class AutonomousRunService {
       signalsDetected: 0,
       opportunitiesCreated: 0,
       opportunitiesReassessed: 0,
+      gridUpdatesDetected: 0,
       decisions: {
         continue_investigation: 0,
         stop: 0,
@@ -201,6 +215,15 @@ export class AutonomousRunService {
     runId: string,
     summary: AutonomousRunSummary,
   ): Promise<void> {
+    // Route by sourceClass. `grid_update` sources go through a dedicated
+    // extractor and are logged as GRID_UPDATE_DETECTED. Everything else
+    // (default `business_signal`, or unset for back-compat) flows through
+    // the pre-existing EvidenceExtractor pipeline UNCHANGED.
+    if (source.sourceClass === 'grid_update') {
+      await this.processGridUpdateSource(source, runId, summary);
+      return;
+    }
+
     const extraction = await this.deps.extractor.extract({ source });
 
     await this.logger.log('EVIDENCE_EXTRACTED', {
@@ -335,6 +358,35 @@ export class AutonomousRunService {
 
     // Enqueue the action (V4). Dispatch happens in drainActionQueue().
     await this.enqueueForDecision(policyDecision, opportunity, runId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Grid-update source path (Liander / Enexis / Stedin capacity pages).
+  // Dedicated extractor; NEVER touches GridContextProvider — that stays
+  // municipality-level. Just records what we saw in the activity log.
+  // ---------------------------------------------------------------------------
+
+  private async processGridUpdateSource(
+    source: DiscoveredSource,
+    runId: string,
+    summary: AutonomousRunSummary,
+  ): Promise<void> {
+    const gridUpdate = await this.gridUpdateExtractor.extract({ source });
+    summary.gridUpdatesDetected += 1;
+    await this.logger.log('GRID_UPDATE_DETECTED', {
+      opportunityId: null,
+      message: gridUpdate.summary,
+      metadata: {
+        runId,
+        sourceUrl: source.url,
+        extractor: gridUpdate.extractor,
+        operator: gridUpdate.operator,
+        updateType: gridUpdate.updateType,
+        mentionedRegions: gridUpdate.mentionedRegions,
+        publishedAt: gridUpdate.publishedAt,
+        evidenceExcerpt: gridUpdate.evidenceExcerpt,
+      },
+    });
   }
 
   // ---------------------------------------------------------------------------

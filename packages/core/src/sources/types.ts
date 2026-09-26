@@ -1,3 +1,5 @@
+import type { SourceClass } from './sourceClass.js';
+
 /**
  * A single document that a discovery provider surfaces from a public source.
  * The pipeline treats this as the raw input — it does NOT know at this stage
@@ -23,6 +25,12 @@ export interface DiscoveredSource {
     | 'industrial_park'
     | 'news_article'
     | 'other';
+  /**
+   * Which pipeline this source is routed into. Optional so pre-existing
+   * providers/tests that don't set it stay valid — the run engine treats
+   * missing/undefined as `business_signal`.
+   */
+  sourceClass?: SourceClass;
   /** Origin provider name, for observability. */
   provider: string;
 }

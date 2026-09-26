@@ -40,6 +40,9 @@ export class DemoSourceDiscoveryProvider implements SourceDiscoveryProvider {
         discoveredAt: now,
         publishedAt: manifest.publishedAt,
         sourceType: manifest.sourceType,
+        // All bundled demo fixtures are company news/sustainability pages —
+        // grid-operator updates are exercised separately in tests.
+        sourceClass: 'business_signal',
         provider: this.name,
       });
     }
