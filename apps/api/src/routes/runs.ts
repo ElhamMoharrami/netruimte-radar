@@ -7,13 +7,18 @@ export function runsRoutes(ctx: AppContext) {
 
   /**
    * POST /api/runs/demo
-   * Manual trigger for demos. No auth. Always processes whatever the wired
-   * source provider returns (demo fixtures unless Apify credentials present).
+   * Endpoint the live UI's "Trigger autonomous scan" button hits. No auth.
+   * The endpoint name is legacy — attribution is:
+   *   ?offline=true → 'offline' (offline fixture provider)
+   *   otherwise     → 'manual'  (operator-triggered live scan against the
+   *                              wired production providers)
+   * "demo" attribution is reserved for the explicit /api/demo/* endpoints.
    */
   app.post('/runs/demo', async (c) => {
     const offline = c.req.query('offline') === 'true';
     const service = offline ? ctx.buildOfflineRunService() : ctx.runService;
-    const summary = await service.run({ trigger: 'demo', notes: offline ? 'offline mode' : undefined });
+    const trigger: RunTrigger = offline ? 'offline' : 'manual';
+    const summary = await service.run({ trigger, notes: offline ? 'offline mode' : undefined });
     return c.json({ wiring: ctx.wiring, summary });
   });
 
@@ -22,6 +27,11 @@ export function runsRoutes(ctx: AppContext) {
    * Service-triggered (n8n cron, GitHub Actions, external scheduler).
    * Requires `X-Service-Token: <SERVICE_TOKEN>`. Returns 401 if the token is
    * missing/mismatched, or 503 if the API is not configured with any token.
+   *
+   * Attribution:
+   *   ?offline=true → 'offline' (proves the pipeline still works end-to-end
+   *                              without live upstreams)
+   *   otherwise     → 'scheduled'
    */
   app.post('/runs/scheduled', async (c) => {
     if (!ctx.serviceToken) {
@@ -33,7 +43,7 @@ export function runsRoutes(ctx: AppContext) {
     }
     const offline = c.req.query('offline') === 'true';
     const service = offline ? ctx.buildOfflineRunService() : ctx.runService;
-    const trigger: RunTrigger = 'scheduled';
+    const trigger: RunTrigger = offline ? 'offline' : 'scheduled';
     const summary = await service.run({ trigger, notes: offline ? 'offline mode' : undefined });
     return c.json({ wiring: ctx.wiring, summary });
   });

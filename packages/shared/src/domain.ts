@@ -188,7 +188,20 @@ export type ActivityLog = z.infer<typeof ActivityLogSchema>;
 // Run history — added in validation phase (V1)
 // ---------------------------------------------------------------------------
 
-export const RunTrigger = z.enum(['manual', 'scheduled', 'demo']);
+/**
+ * How a run entered the pipeline. Every persisted `RunHistory` row is
+ * attributed to exactly one of these — this is the record we show operators
+ * on `/runs` and slice by in reports, so misattribution masks reality.
+ *
+ *   manual     → operator clicked "Trigger autonomous scan" in the live UI.
+ *   scheduled  → n8n / external cron hit POST /api/runs/scheduled with a
+ *                valid SERVICE_TOKEN.
+ *   demo       → an explicit /api/demo/* fixture endpoint (overnight-scan,
+ *                inject-conflict, simulate/*).
+ *   offline    → any endpoint invoked with `?offline=true`, which swaps in
+ *                the offline fixture provider regardless of live wiring.
+ */
+export const RunTrigger = z.enum(['manual', 'scheduled', 'demo', 'offline']);
 export type RunTrigger = z.infer<typeof RunTrigger>;
 
 export const RunHistorySchema = z.object({

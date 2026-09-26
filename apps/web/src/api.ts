@@ -128,7 +128,7 @@ export interface DossierDto {
 
 export interface RunHistoryDto {
   id: string;
-  trigger: 'manual' | 'scheduled' | 'demo';
+  trigger: 'manual' | 'scheduled' | 'demo' | 'offline';
   sourceProvider: string;
   extractor: string;
   automationProvider: string;

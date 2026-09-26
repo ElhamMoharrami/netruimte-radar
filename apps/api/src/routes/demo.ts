@@ -49,13 +49,15 @@ export function demoRoutes(ctx: AppContext) {
 
   /**
    * POST /api/demo/overnight-scan
-   * Runs the full autonomous pipeline via the wired providers, marked as
-   * "scheduled" for the RunHistory (demo trigger simulates the overnight
-   * cron).
+   * Runs the full autonomous pipeline via the wired providers as an explicit
+   * demo control (the reviewer clicks "simulate overnight scan"). Attribution
+   * is 'demo' — real scheduled runs come from n8n hitting
+   * POST /api/runs/scheduled, and mixing the two poisons the /runs history
+   * used to answer "how did the cron do last night?".
    */
   app.post('/demo/overnight-scan', async (c) => {
     const summary = await ctx.runService.run({
-      trigger: 'scheduled',
+      trigger: 'demo',
       notes: 'demo overnight scan',
     });
     return c.json({ wiring: ctx.wiring, summary });
