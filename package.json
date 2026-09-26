@@ -8,12 +8,12 @@
   },
   "packageManager": "pnpm@12.6.0",
   "scripts": {
-    "dev": "pnpm --parallel --filter \"./apps/*\" run dev",
-    "dev:api": "pnpm --filter @netruimte/api dev",
+    "dev": "pnpm -r --filter \"./packages/*\" run build && pnpm --parallel --filter \"./apps/*\" run dev",
+    "dev:api": "pnpm -r --filter \"./packages/*\" run build && pnpm --filter @netruimte/api dev",
     "dev:web": "pnpm --filter @netruimte/web dev",
     "build": "pnpm -r --filter \"./packages/*\" run build && pnpm -r --filter \"./apps/*\" run build",
-    "typecheck": "pnpm -r run typecheck && tsc -p netlify/tsconfig.json",
-    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r --filter \"./packages/*\" run build && pnpm -r run typecheck && tsc -p netlify/tsconfig.json",
+    "test": "pnpm -r --filter \"./packages/*\" run build && pnpm -r run test",
     "lint": "pnpm -r run lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,css,html}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,css,html}\""
@@ -21,6 +21,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
     "@google/generative-ai": "^0.24.1",
+    "@netruimte/core": "workspace:*",
+    "@netruimte/shared": "workspace:*",
     "hono": "^4.6.14",
     "openai": "^4.104.0",
     "zod": "^3.24.1"

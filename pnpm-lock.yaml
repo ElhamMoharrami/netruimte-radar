@@ -172,6 +172,12 @@ importers:
       '@google/generative-ai':
         specifier: ^0.24.1
         version: 0.24.1
+      '@netruimte/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@netruimte/shared':
+        specifier: workspace:*
+        version: link:packages/shared
       hono:
         specifier: ^4.6.14
         version: 4.13.9
