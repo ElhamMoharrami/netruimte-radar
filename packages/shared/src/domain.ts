@@ -80,6 +80,14 @@ export const ActivityEventType = z.enum([
   'GRID_UPDATE_DETECTED',
   'GRID_UPDATE_UNCHANGED',
   'GRID_UPDATE_CHANGED',
+  // Business-source dedupe (symmetric with grid_update).
+  // UNCHANGED fires when a business page's canonical URL + normalized content
+  // hash matches a previously-ingested Evidence row; the extractor is skipped
+  // and the opportunity is not reassessed.
+  'BUSINESS_SOURCE_UNCHANGED',
+  // CHANGED fires when the URL was seen before but the content hash differs —
+  // extraction proceeds so genuine updates still surface.
+  'BUSINESS_SOURCE_CHANGED',
 ]);
 export type ActivityEventType = z.infer<typeof ActivityEventType>;
 

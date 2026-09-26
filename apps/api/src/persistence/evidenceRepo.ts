@@ -63,5 +63,19 @@ export function createEvidenceRepository(db: Db): EvidenceRepository {
       );
       return rows.map(toDomain);
     },
+    async findBySourceAndHash(sourceUrl, rawTextHash) {
+      const row = await db.get<Row>(
+        `SELECT * FROM evidence WHERE source_url = ? AND raw_text_hash = ? LIMIT 1`,
+        [sourceUrl, rawTextHash],
+      );
+      return row ? toDomain(row) : null;
+    },
+    async findAnyBySourceUrl(sourceUrl) {
+      const row = await db.get<Row>(
+        `SELECT * FROM evidence WHERE source_url = ? ORDER BY detected_at DESC LIMIT 1`,
+        [sourceUrl],
+      );
+      return row ? toDomain(row) : null;
+    },
   };
 }

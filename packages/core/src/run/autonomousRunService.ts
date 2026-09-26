@@ -29,6 +29,10 @@ import {
 import { PolicyEngine, type PolicyDecision } from '../policy/index.js';
 import { OpportunityScoringService, type ScoringResult } from '../scoring/index.js';
 import type { DiscoveredSource, SourceDiscoveryProvider } from '../sources/types.js';
+import {
+  canonicalizeUrl,
+  computeBusinessSourceContentHash,
+} from '../sources/canonicalize.js';
 import type { AutomationDispatch, AutomationProvider } from '../automation/types.js';
 import { buildDossierContent, type DossierAdditionalContext } from '../dossier/dossierService.js';
 
@@ -257,6 +261,48 @@ export class AutonomousRunService {
     if (source.sourceClass === 'grid_update') {
       await this.processGridUpdateSource(source, runId, summary);
       return;
+    }
+
+    // ── Business-source dedupe (mirrors grid_update dedupe) ────────────────
+    // Skip extraction/scoring/reassessment when the same canonical URL + the
+    // same normalized content hash has already produced Evidence. Without
+    // this guard, unchanged crawls create duplicate Evidence rows that fake
+    // corroboration and swing the score on every scan.
+    const canonicalUrl = canonicalizeUrl(source.url);
+    const contentHash = computeBusinessSourceContentHash(source.rawText);
+    const existingSame = await this.deps.repos.evidence.findBySourceAndHash(
+      canonicalUrl,
+      contentHash,
+    );
+    if (existingSame) {
+      await this.logger.log('BUSINESS_SOURCE_UNCHANGED', {
+        message: `Unchanged business source (skipping): ${canonicalUrl}`,
+        metadata: {
+          runId,
+          sourceUrl: canonicalUrl,
+          sourceClass: 'business_signal',
+          contentHash,
+          priorEvidenceId: existingSame.id,
+          priorCompanyId: existingSame.companyId,
+        },
+      });
+      return;
+    }
+    // URL was seen before but the content changed — extraction proceeds so
+    // corroboration/contradiction can genuinely trigger against the new text.
+    const priorAny = await this.deps.repos.evidence.findAnyBySourceUrl(canonicalUrl);
+    if (priorAny) {
+      await this.logger.log('BUSINESS_SOURCE_CHANGED', {
+        message: `Business source content changed: ${canonicalUrl}`,
+        metadata: {
+          runId,
+          sourceUrl: canonicalUrl,
+          sourceClass: 'business_signal',
+          contentHash,
+          priorEvidenceId: priorAny.id,
+          priorHash: priorAny.rawTextHash,
+        },
+      });
     }
 
     const extraction = await this.deps.extractor.extract({ source });
@@ -933,16 +979,20 @@ export class AutonomousRunService {
     extraction: ExtractionResult,
     source: DiscoveredSource,
   ): Promise<Evidence> {
+    // Store the CANONICAL URL and the NORMALIZED content hash so the
+    // pre-extraction dedupe guard on the next scan can find this row. Using
+    // the raw URL / raw sha here would silently allow re-processing whenever
+    // whitespace or scheme case flips between crawls.
     const evidence: Evidence = {
       id: newId.evidence(),
       companyId: company.id,
-      sourceUrl: source.url,
+      sourceUrl: canonicalizeUrl(source.url),
       sourceTitle: source.title,
       sourceType: extraction.sourceType,
       excerpt: extraction.evidenceExcerpt,
       detectedAt: this.now(),
       publishedAt: source.publishedAt,
-      rawTextHash: sha256(source.rawText),
+      rawTextHash: computeBusinessSourceContentHash(source.rawText),
       confidence: extraction.confidence,
     };
     return this.deps.repos.evidence.insert(evidence);

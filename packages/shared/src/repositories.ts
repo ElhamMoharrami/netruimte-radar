@@ -23,6 +23,19 @@ export interface EvidenceRepository {
   insert(evidence: Evidence): Promise<Evidence>;
   findById(id: string): Promise<Evidence | null>;
   listByCompany(companyId: string): Promise<Evidence[]>;
+  /**
+   * Exact-match dedupe lookup used by the business_signal pre-extraction
+   * guard. `sourceUrl` MUST already be canonicalized by the caller (see
+   * `@netruimte/core` → `canonicalizeUrl`); this repo does not normalize
+   * for you.
+   */
+  findBySourceAndHash(sourceUrl: string, rawTextHash: string): Promise<Evidence | null>;
+  /**
+   * Returns any prior evidence row for this canonical URL — used to
+   * distinguish first-time processing from a genuine content-changed
+   * re-scan. Returns the most recently detected row when several exist.
+   */
+  findAnyBySourceUrl(sourceUrl: string): Promise<Evidence | null>;
 }
 
 export interface SignalRepository {

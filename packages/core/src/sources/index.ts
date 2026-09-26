@@ -6,3 +6,4 @@ export {
 } from './sourceClass.js';
 export { DemoSourceDiscoveryProvider } from './demoProvider.js';
 export { ApifySourceDiscoveryProvider, type ApifyProviderOptions } from './apifyProvider.js';
+export { canonicalizeUrl, computeBusinessSourceContentHash } from './canonicalize.js';
