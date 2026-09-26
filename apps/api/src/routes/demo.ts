@@ -24,11 +24,16 @@ const DEMO_SOURCES_DIR = resolve(here, '../../../../data/demo/sources');
  * All /api/demo/* routes are gated on DEMO_MODE=true. In production mode they
  * return 403 — we don't want a live deployment offering "simulate failure"
  * buttons.
+ *
+ * The guard is scoped to `/demo/*` (not `*`) because this sub-app is mounted
+ * with `app.route('/api', demoRoutes(ctx))`, which would otherwise turn a
+ * wildcard middleware into an `/api/*` gate that shadows sibling read routes
+ * mounted after it (e.g. `/api/grid-events`).
  */
 export function demoRoutes(ctx: AppContext) {
   const app = new Hono();
 
-  app.use('*', async (c, next) => {
+  app.use('/demo/*', async (c, next) => {
     if (!ctx.demoMode) return c.json({ error: 'demo_disabled' }, 403);
     await next();
   });

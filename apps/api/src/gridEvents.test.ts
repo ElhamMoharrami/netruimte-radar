@@ -26,7 +26,11 @@ function stubProvider(name: string, docs: DiscoveredSource[]): SourceDiscoveryPr
   };
 }
 
-function makeCtx(db: Db, provider?: SourceDiscoveryProvider): AppContext {
+function makeCtx(
+  db: Db,
+  provider?: SourceDiscoveryProvider,
+  opts: { demoMode?: boolean; serviceToken?: string | null } = {},
+): AppContext {
   const repos = createRepositories(db);
   const sources = provider ?? stubProvider('empty', []);
   const extractor = new RuleBasedEvidenceExtractor();
@@ -41,8 +45,10 @@ function makeCtx(db: Db, provider?: SourceDiscoveryProvider): AppContext {
     policy: new PolicyEngine(),
     automation,
   });
+  const demoMode = opts.demoMode ?? true;
+  const serviceToken = opts.serviceToken ?? null;
   const wiring: WiringReport = {
-    demoMode: true,
+    demoMode,
     extractor: extractor.name,
     extractorReason: 'test',
     sourceProvider: sources.name,
@@ -50,15 +56,15 @@ function makeCtx(db: Db, provider?: SourceDiscoveryProvider): AppContext {
     automationProvider: automation.name,
     automationProviderReason: 'test',
     notificationAllowlist: 0,
-    scheduledEndpointEnabled: false,
+    scheduledEndpointEnabled: Boolean(serviceToken),
     aiProvider: 'rules',
     gridProvider: 'demo',
     gridProviderReason: 'test',
   };
   return {
     repos,
-    demoMode: true,
-    serviceToken: null,
+    demoMode,
+    serviceToken,
     sources,
     extractor,
     grid,
@@ -369,5 +375,89 @@ describe('GET /api/grid-events', () => {
     const app = createApp(ctx);
     const res = await app.request('/api/grid-events/gev_does-not-exist');
     expect(res.status).toBe(404);
+  });
+});
+
+// ─── Public-read / write-auth security contract ────────────────────────────
+//
+// The dashboard fetches these endpoints from the browser without any auth
+// header. Regression guard for the 403 that surfaced when the demo sub-app's
+// wildcard middleware shadowed sibling read routes mounted after it.
+//
+// Rules:
+//   - Read routes on the dashboard (grid-events, opportunities, activity,
+//     runs, wiring) must respond without SERVICE_TOKEN, even in production
+//     mode (demoMode=false).
+//   - POST /api/runs/scheduled must stay authenticated when serviceToken is
+//     set.
+//   - POST /api/demo/* must stay gated on demoMode=true.
+
+describe('security contract — public reads, protected writes', () => {
+  let db: Db;
+  beforeEach(() => {
+    db = openDb({ path: ':memory:' });
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('unauth GET /api/grid-events → 200 with demoMode=false + serviceToken set', async () => {
+    const ctx = makeCtx(db, undefined, { demoMode: false, serviceToken: 'secret' });
+    const app = createApp(ctx);
+    const res = await app.request('/api/grid-events?limit=6');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: unknown[] };
+    expect(Array.isArray(body.data)).toBe(true);
+  });
+
+  it('unauth GET /api/grid-events/:id → 200 for a known id with demoMode=false', async () => {
+    const ctx = makeCtx(db, undefined, { demoMode: false, serviceToken: 'secret' });
+    const app = createApp(ctx);
+    const e = fakeGridEvent();
+    await ctx.repos.gridEvents.insert(e);
+    const res = await app.request(`/api/grid-events/${e.id}`);
+    expect(res.status).toBe(200);
+  });
+
+  it('unauth GET /api/grid-events/:id → 404 for unknown id with demoMode=false', async () => {
+    const ctx = makeCtx(db, undefined, { demoMode: false, serviceToken: 'secret' });
+    const app = createApp(ctx);
+    const res = await app.request('/api/grid-events/gev_missing');
+    expect(res.status).toBe(404);
+  });
+
+  it('sibling read routes stay public with demoMode=false (opportunities, activity, runs, wiring)', async () => {
+    const ctx = makeCtx(db, undefined, { demoMode: false, serviceToken: 'secret' });
+    const app = createApp(ctx);
+    for (const path of ['/api/opportunities', '/api/activity/recent', '/api/runs', '/api/wiring']) {
+      const res = await app.request(path);
+      expect(res.status, `GET ${path}`).toBe(200);
+    }
+  });
+
+  it('POST /api/runs/scheduled without token → 401 when serviceToken configured', async () => {
+    const ctx = makeCtx(db, undefined, { demoMode: false, serviceToken: 'secret' });
+    const app = createApp(ctx);
+    const res = await app.request('/api/runs/scheduled', { method: 'POST' });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/runs/scheduled with wrong token → 401', async () => {
+    const ctx = makeCtx(db, undefined, { demoMode: false, serviceToken: 'secret' });
+    const app = createApp(ctx);
+    const res = await app.request('/api/runs/scheduled', {
+      method: 'POST',
+      headers: { 'x-service-token': 'nope' },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/demo/reset → 403 when demoMode=false (guard still active on /demo/*)', async () => {
+    const ctx = makeCtx(db, undefined, { demoMode: false, serviceToken: 'secret' });
+    const app = createApp(ctx);
+    const res = await app.request('/api/demo/reset', { method: 'POST' });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('demo_disabled');
   });
 });

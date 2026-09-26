@@ -81,8 +81,10 @@ export default function Layout() {
         <Outlet />
       </main>
       <footer className="border-t border-slate-800 text-center text-xs text-slate-500 py-3">
-        All extracted claims are provenance-linked. Grid congestion is demo data — never treated as
-        verified topology.
+        All extracted claims are provenance-linked.{' '}
+        {wiring?.gridProvider === 'netbeheer-nl'
+          ? 'Grid congestion context uses public Netbeheer Nederland data. Grid-neighbor topology remains unverified.'
+          : 'Grid congestion context is demo data and is never treated as verified topology.'}
       </footer>
     </div>
   );
