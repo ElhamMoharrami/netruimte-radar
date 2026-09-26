@@ -171,6 +171,49 @@ export interface RunResponse {
   summary: RunSummaryDto;
 }
 
+export type GridOperatorDto = 'liander' | 'enexis' | 'stedin' | 'unknown';
+export type GridEventTypeDto =
+  | 'new_bottleneck'
+  | 'capacity_update'
+  | 'congestion_study_completed'
+  | 'waiting_list_update'
+  | 'capacity_released'
+  | 'other';
+export type GridDirectionDto = 'consumption' | 'feed_in' | 'both' | 'unknown';
+
+export interface GridEventDto {
+  id: string;
+  operator: GridOperatorDto;
+  eventType: GridEventTypeDto;
+  regions: string[];
+  municipalities: string[];
+  stations: string[];
+  direction: GridDirectionDto;
+  summary: string;
+  evidenceExcerpt: string;
+  sourceUrl: string;
+  publishedAt: string | null;
+  detectedAt: string;
+  confidence: number;
+  contentHash: string;
+}
+
+/** Matched grid-event summary as logged in OPPORTUNITY_SCORED activity meta. */
+export interface MatchedGridEventSummary {
+  id: string;
+  operator: GridOperatorDto;
+  eventType: GridEventTypeDto;
+  sourceUrl: string;
+}
+
+export interface GridEventCorrelationDto {
+  bonus: number;
+  confidence: number;
+  explanation: string;
+  matchedEventIds: string[];
+  matchedEventSummaries: MatchedGridEventSummary[];
+}
+
 export interface HistoryResponse {
   opportunityId: string;
   decisions: DecisionDto[];
@@ -228,6 +271,10 @@ export const api = {
   runDemo: () => jsonFetch<RunResponse>('/api/runs/demo', { method: 'POST' }),
   runs: (limit = 50) =>
     jsonFetch<{ data: RunHistoryDto[] }>(`/api/runs?limit=${limit}`).then((r) => r.data),
+  gridEvents: (limit = 100) =>
+    jsonFetch<{ data: GridEventDto[] }>(`/api/grid-events?limit=${limit}`).then((r) => r.data),
+  gridEvent: (id: string) =>
+    jsonFetch<{ event: GridEventDto }>(`/api/grid-events/${id}`).then((r) => r.event),
   demo: {
     reset: () => jsonFetch<{ ok: true }>('/api/demo/reset', { method: 'POST' }),
     overnightScan: () =>

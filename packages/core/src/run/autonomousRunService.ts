@@ -5,6 +5,7 @@ import {
   type Company,
   type DecisionType,
   type Evidence,
+  type GridEvent,
   type Opportunity,
   type QueuedAction,
   type Repositories,
@@ -15,8 +16,16 @@ import {
 import { ActivityLogger } from '../activity/activityLogger.js';
 import type { EvidenceExtractor, ExtractionResult } from '../extraction/types.js';
 import type { GridUpdateExtractor } from '../extraction/gridUpdateExtractor.js';
-import { RuleBasedGridUpdateExtractor } from '../extraction/gridUpdateExtractor.js';
+import {
+  RuleBasedGridUpdateExtractor,
+  computeGridEventContentHash,
+} from '../extraction/gridUpdateExtractor.js';
 import type { GridContextProvider } from '../grid/types.js';
+import {
+  GridBusinessCorrelationService,
+  type CorrelationResult,
+  type GridBusinessCorrelator,
+} from '../grid/gridBusinessCorrelation.js';
 import { PolicyEngine, type PolicyDecision } from '../policy/index.js';
 import { OpportunityScoringService, type ScoringResult } from '../scoring/index.js';
 import type { DiscoveredSource, SourceDiscoveryProvider } from '../sources/types.js';
@@ -34,6 +43,14 @@ export interface AutonomousRunDeps {
    * GridContextProvider is untouched.
    */
   gridUpdateExtractor?: GridUpdateExtractor;
+  /**
+   * Optional correlator that adds a freshness bonus when recent grid_update
+   * events geographically overlap a business location. Defaults to a
+   * `GridBusinessCorrelationService` with the spec defaults (+10 city, +5
+   * region, cap 15). Independent of `grid` — the baseline municipality-level
+   * congestion still comes from `grid`.
+   */
+  gridBusinessCorrelator?: GridBusinessCorrelator;
   grid: GridContextProvider;
   scoring?: OpportunityScoringService;
   policy?: PolicyEngine;
@@ -89,6 +106,7 @@ export class AutonomousRunService {
   private readonly scoring: OpportunityScoringService;
   private readonly policy: PolicyEngine;
   private readonly gridUpdateExtractor: GridUpdateExtractor;
+  private readonly gridBusinessCorrelator: GridBusinessCorrelator;
   private readonly now: () => string;
 
   constructor(private readonly deps: AutonomousRunDeps) {
@@ -96,6 +114,8 @@ export class AutonomousRunService {
     this.scoring = deps.scoring ?? new OpportunityScoringService();
     this.policy = deps.policy ?? new PolicyEngine();
     this.gridUpdateExtractor = deps.gridUpdateExtractor ?? new RuleBasedGridUpdateExtractor();
+    this.gridBusinessCorrelator =
+      deps.gridBusinessCorrelator ?? new GridBusinessCorrelationService();
     this.now = deps.now ?? nowIso;
   }
 
@@ -298,6 +318,7 @@ export class AutonomousRunService {
       metadata: { runId, companyId: company.id, gridContext },
     });
 
+    const correlation = await this.correlateWithRecentGridEvents(company, gridContext);
     const scoring = this.scoring.score({
       signalType: signal.type,
       estimatedImpactClass: signal.estimatedImpactClass,
@@ -306,6 +327,10 @@ export class AutonomousRunService {
       corroboratingSources: 1,
       onIndustrialPark: false,
       congestion: gridContext,
+      gridEventCorrelation: {
+        bonus: correlation.freshnessBonus,
+        explanation: correlation.explanation,
+      },
       now: this.now(),
     });
 
@@ -318,7 +343,23 @@ export class AutonomousRunService {
     await this.logger.log('OPPORTUNITY_SCORED', {
       opportunityId: opportunity.id,
       message: `Score ${scoring.score} (${scoring.category})`,
-      metadata: { runId, components: scoring.components, explanation: scoring.explanation },
+      metadata: {
+        runId,
+        components: scoring.components,
+        explanation: scoring.explanation,
+        gridEventCorrelation: {
+          bonus: correlation.freshnessBonus,
+          confidence: correlation.confidence,
+          explanation: correlation.explanation,
+          matchedEventIds: correlation.matchedEvents.map((e) => e.id),
+          matchedEventSummaries: correlation.matchedEvents.map((e) => ({
+            id: e.id,
+            operator: e.operator,
+            eventType: e.eventType,
+            sourceUrl: e.sourceUrl,
+          })),
+        },
+      },
     });
 
     const policyDecision = this.policy.evaluate({
@@ -371,21 +412,103 @@ export class AutonomousRunService {
     runId: string,
     summary: AutonomousRunSummary,
   ): Promise<void> {
-    const gridUpdate = await this.gridUpdateExtractor.extract({ source });
-    summary.gridUpdatesDetected += 1;
-    await this.logger.log('GRID_UPDATE_DETECTED', {
-      opportunityId: null,
-      message: gridUpdate.summary,
-      metadata: {
-        runId,
-        sourceUrl: source.url,
-        extractor: gridUpdate.extractor,
-        operator: gridUpdate.operator,
-        updateType: gridUpdate.updateType,
-        mentionedRegions: gridUpdate.mentionedRegions,
-        publishedAt: gridUpdate.publishedAt,
-        evidenceExcerpt: gridUpdate.evidenceExcerpt,
+    // The extractor returns one entry per independent event on the page.
+    // Dedup happens per event:
+    //   - (sourceUrl, contentHash) already exists → UNCHANGED, no insert
+    //   - any prior event for sourceUrl exists but hash differs → CHANGED, insert
+    //   - no prior event for sourceUrl at all → DETECTED, insert
+    const events = await this.gridUpdateExtractor.extract({ source });
+    const now = this.now();
+    for (const event of events) {
+      const contentHash = computeGridEventContentHash(event);
+      const existing = await this.deps.repos.gridEvents.findBySourceAndHash(
+        source.url,
+        contentHash,
+      );
+      if (existing) {
+        await this.logger.log('GRID_UPDATE_UNCHANGED', {
+          opportunityId: null,
+          message: `Unchanged: ${event.summary}`,
+          metadata: {
+            runId,
+            sourceUrl: event.sourceUrl,
+            gridEventId: existing.id,
+            contentHash,
+            operator: event.operator,
+            eventType: event.eventType,
+          },
+        });
+        continue;
+      }
+
+      const anyPrior = await this.deps.repos.gridEvents.findLatestBySourceUrl(source.url);
+      const changed = Boolean(anyPrior);
+
+      const persisted: GridEvent = {
+        id: newId.gridEvent(),
+        operator: event.operator,
+        eventType: event.eventType,
+        regions: event.regions,
+        municipalities: event.municipalities,
+        stations: event.stations,
+        direction: event.direction,
+        summary: event.summary,
+        evidenceExcerpt: event.evidenceExcerpt,
+        sourceUrl: event.sourceUrl,
+        publishedAt: event.publishedAt,
+        detectedAt: now,
+        confidence: event.confidence,
+        contentHash,
+      };
+      await this.deps.repos.gridEvents.insert(persisted);
+      summary.gridUpdatesDetected += 1;
+
+      await this.logger.log(changed ? 'GRID_UPDATE_CHANGED' : 'GRID_UPDATE_DETECTED', {
+        opportunityId: null,
+        message: changed ? `Changed: ${event.summary}` : event.summary,
+        metadata: {
+          runId,
+          sourceUrl: event.sourceUrl,
+          gridEventId: persisted.id,
+          previousGridEventId: anyPrior?.id ?? null,
+          extractor: event.extractor,
+          operator: event.operator,
+          eventType: event.eventType,
+          regions: event.regions,
+          municipalities: event.municipalities,
+          stations: event.stations,
+          direction: event.direction,
+          confidence: event.confidence,
+          publishedAt: event.publishedAt,
+          evidenceExcerpt: event.evidenceExcerpt,
+          contentHash,
+        },
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Business ↔ grid_update correlation (used by both processSource and
+  // reassessExisting on the business_signal path). Fetches recent grid events
+  // and hands them to the correlator alongside the company's city and the
+  // provincie carried on the grid context (populated by
+  // NetbeheerNlGridContextProvider). Never touches the GridContextProvider
+  // baseline — that stays municipality-level.
+  // ---------------------------------------------------------------------------
+
+  private async correlateWithRecentGridEvents(
+    company: Company,
+    gridContext: { provincie?: string | null } | null,
+  ): Promise<CorrelationResult> {
+    // Pull the most recent 500 events; the correlator filters by recencyDays.
+    const events = await this.deps.repos.gridEvents.list(500);
+    return this.gridBusinessCorrelator.correlate({
+      company: {
+        city: company.city,
+        provincie: gridContext?.provincie ?? null,
       },
+      gridEvents: events,
+      now: this.now(),
     });
   }
 
@@ -422,7 +545,9 @@ export class AutonomousRunService {
       ? Math.max(0, signal.confidence - 0.25)
       : signal.confidence;
 
-    // Rescore.
+    // Rescore. Re-correlate too — recent grid events may have arrived since
+    // the initial score, which is exactly the situation this bonus tracks.
+    const correlation = await this.correlateWithRecentGridEvents(company, gridContext);
     const scoring = this.scoring.score({
       signalType: signal.type,
       estimatedImpactClass: signal.estimatedImpactClass,
@@ -431,6 +556,10 @@ export class AutonomousRunService {
       corroboratingSources: conflict ? 1 : priorSignals.length,
       onIndustrialPark: false,
       congestion: gridContext,
+      gridEventCorrelation: {
+        bonus: correlation.freshnessBonus,
+        explanation: correlation.explanation,
+      },
       now: this.now(),
     });
 

@@ -9,6 +9,7 @@ export const newId = {
   opportunity: () => `op_${rand()}`,
   decision: () => `dec_${rand()}`,
   activity: () => `act_${rand()}`,
+  gridEvent: () => `gev_${rand()}`,
 };
 
 export function nowIso(): string {

@@ -111,10 +111,15 @@ describe('source-class routing in the autonomous run engine', () => {
     const gridEvents = activity.filter((a) => a.eventType === 'GRID_UPDATE_DETECTED');
     expect(gridEvents).toHaveLength(1);
     const meta = gridEvents[0]!.metadata as Record<string, unknown>;
-    expect(meta.operator).toBe('Liander');
-    expect(meta.updateType).toBe('both');
-    expect(meta.mentionedRegions).toEqual(expect.arrayContaining(['Noord-Holland', 'Amsterdam']));
+    expect(meta.operator).toBe('liander');
+    expect(meta.direction).toBe('both');
+    expect(meta.regions).toEqual(expect.arrayContaining(['Noord-Holland']));
+    expect(meta.municipalities).toEqual(expect.arrayContaining(['Amsterdam']));
     expect(meta.publishedAt).toBe('2026-02-10T10:00:00.000Z');
+    // New fields from the enriched schema:
+    expect(meta.eventType).toBeDefined();
+    expect(meta.stations).toBeDefined();
+    expect(meta.confidence).toBeGreaterThan(0);
   });
 
   it('routes mixed sources in one run, preserving totals per class', async () => {

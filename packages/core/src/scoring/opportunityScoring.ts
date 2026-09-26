@@ -52,6 +52,12 @@ export class OpportunityScoringService {
       timing: this.timingPoints(input.sourcePublishedAt, input.now),
       corroboration: this.corroborationPoints(input.corroboratingSources),
       collaboration: input.onIndustrialPark ? 10 : 0,
+      // Additive, capped at 15 by the correlator; defaults to 0 so pre-
+      // correlation callers/tests get identical behaviour.
+      gridEventCorrelation: Math.max(
+        0,
+        Math.min(15, Math.round(input.gridEventCorrelation?.bonus ?? 0)),
+      ),
     };
   }
 
@@ -95,6 +101,18 @@ export class OpportunityScoringService {
     out.push(`timing=${c.timing} (publishedAt=${input.sourcePublishedAt ?? 'unknown'})`);
     out.push(`corroboration=${c.corroboration} (sources=${input.corroboratingSources})`);
     out.push(`collaboration=${c.collaboration} (industrialPark=${input.onIndustrialPark})`);
+    if (c.gridEventCorrelation > 0) {
+      const note = input.gridEventCorrelation?.explanation
+        ? ` — ${input.gridEventCorrelation.explanation}`
+        : '';
+      out.push(`grid_event_correlation=${c.gridEventCorrelation}${note}`);
+    } else if (input.gridEventCorrelation) {
+      // Bonus is 0 but caller supplied context — surface it so the audit
+      // trail records that we DID check for correlation.
+      out.push(
+        `grid_event_correlation=0 (${input.gridEventCorrelation.explanation ?? 'no matching recent grid events'})`,
+      );
+    }
     return out;
   }
 }

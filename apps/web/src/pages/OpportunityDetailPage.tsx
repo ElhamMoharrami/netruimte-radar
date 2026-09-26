@@ -1,12 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   api,
   type ActivityEntry,
   type DossierDto,
+  type GridEventCorrelationDto,
+  type GridEventDto,
   type HistoryResponse,
   type OpportunityDetail,
 } from '../api.js';
+import { GridEventCard } from '../components/GridEventCard.js';
+import { GridTopologyDisclaimer } from '../components/GridTopologyDisclaimer.js';
 
 export default function OpportunityDetailPage() {
   const { id = '' } = useParams();
@@ -14,6 +18,7 @@ export default function OpportunityDetailPage() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [history, setHistory] = useState<HistoryResponse | null>(null);
   const [dossier, setDossier] = useState<DossierDto | null>(null);
+  const [gridEventsIndex, setGridEventsIndex] = useState<Map<string, GridEventDto>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -34,7 +39,33 @@ export default function OpportunityDetailPage() {
       .dossier(id)
       .then(setDossier)
       .catch(() => setDossier(null));
+    // Full grid-event list, used to hydrate the matched IDs from
+    // OPPORTUNITY_SCORED activity metadata into rich cards.
+    api
+      .gridEvents(500)
+      .then((events) => setGridEventsIndex(new Map(events.map((e) => [e.id, e]))))
+      .catch(() => setGridEventsIndex(new Map()));
   }, [id]);
+
+  // Pull the latest grid-event correlation from the OPPORTUNITY_SCORED
+  // activity metadata (the run engine already logs the matched IDs +
+  // summaries + explanation there). No new API endpoint required.
+  const correlation = useMemo<GridEventCorrelationDto | null>(() => {
+    const scored = [...activity]
+      .filter((a) => a.eventType === 'OPPORTUNITY_SCORED')
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    if (!scored?.metadata) return null;
+    const meta = scored.metadata as Record<string, unknown>;
+    const gc = meta.gridEventCorrelation as GridEventCorrelationDto | undefined;
+    return gc ?? null;
+  }, [activity]);
+
+  const matchedGridEvents = useMemo<GridEventDto[]>(() => {
+    if (!correlation || correlation.matchedEventIds.length === 0) return [];
+    return correlation.matchedEventIds
+      .map((eid) => gridEventsIndex.get(eid))
+      .filter((e): e is GridEventDto => e !== undefined);
+  }, [correlation, gridEventsIndex]);
 
   if (error)
     return (
@@ -86,6 +117,48 @@ export default function OpportunityDetailPage() {
           </div>
         </div>
       </header>
+
+      {correlation && (
+        <section>
+          <div className="flex items-baseline justify-between mb-2">
+            <h2 className="text-sm uppercase tracking-wider text-slate-400">
+              Matching recent grid updates
+            </h2>
+            {correlation.bonus > 0 && (
+              <span className="text-xs font-mono text-radar-accent">
+                +{correlation.bonus} score bonus · confidence {correlation.confidence.toFixed(2)}
+              </span>
+            )}
+          </div>
+          {matchedGridEvents.length === 0 ? (
+            <div className="text-sm text-slate-400 border border-dashed border-slate-700 rounded p-3">
+              {correlation.explanation}
+            </div>
+          ) : (
+            <>
+              <div className="text-xs text-slate-400 mb-2">{correlation.explanation}</div>
+              <ul className="space-y-2">
+                {matchedGridEvents.map((ge) => (
+                  <li key={ge.id}>
+                    <GridEventCard event={ge} variant="compact" />
+                  </li>
+                ))}
+              </ul>
+              {correlation.matchedEventSummaries.length > matchedGridEvents.length && (
+                <div className="text-[11px] text-slate-500 mt-2">
+                  {correlation.matchedEventSummaries.length - matchedGridEvents.length} matched
+                  event(s) are no longer in the recent list — see{' '}
+                  <Link to="/grid-events" className="text-radar-accent hover:underline">
+                    /grid-events
+                  </Link>{' '}
+                  for the full history.
+                </div>
+              )}
+            </>
+          )}
+          <GridTopologyDisclaimer variant="block" />
+        </section>
+      )}
 
       <section>
         <h2 className="text-sm uppercase tracking-wider text-slate-400 mb-2">Signals</h2>

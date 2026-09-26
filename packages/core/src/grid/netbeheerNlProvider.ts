@@ -73,6 +73,8 @@ export class NetbeheerNlGridContextProvider implements GridContextProvider {
           `(${lookup.provincie ?? '?'}, ${lookup.latitude.toFixed(4)}, ${lookup.longitude.toFixed(4)}).`,
           ` No entry in the Netbeheer Nederland snapshot (snapshotAt=${NETBEHEER_NL_SNAPSHOT_AT}) — verify manually.`,
         ].join(''),
+        gemeente: lookup.gemeente,
+        provincie: lookup.provincie,
       };
     }
 
@@ -85,6 +87,8 @@ export class NetbeheerNlGridContextProvider implements GridContextProvider {
         `Gemeente=${lookup.gemeente}, provincie=${lookup.provincie ?? '?'}, operator=${entry.operator}. `,
         `Snapshot ${NETBEHEER_NL_SNAPSHOT_AT}: ${entry.notes}`,
       ].join(''),
+      gemeente: lookup.gemeente,
+      provincie: lookup.provincie,
     };
   }
 }

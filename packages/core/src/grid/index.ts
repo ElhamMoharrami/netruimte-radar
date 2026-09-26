@@ -20,3 +20,9 @@ export {
   lookupGemeente,
   type GemeenteEntry,
 } from './netbeheerNlSnapshot.js';
+export {
+  GridBusinessCorrelationService,
+  type GridBusinessCorrelator,
+  type CorrelationInput,
+  type CorrelationResult,
+} from './gridBusinessCorrelation.js';

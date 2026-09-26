@@ -25,6 +25,7 @@ export default function Layout() {
             {[
               { to: '/radar', label: 'Radar' },
               { to: '/opportunities', label: 'Opportunities' },
+              { to: '/grid-events', label: 'Grid updates' },
               { to: '/runs', label: 'Runs' },
               { to: '/demo', label: 'Demo' },
             ].map((n) => (

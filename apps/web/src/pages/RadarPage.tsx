@@ -3,9 +3,12 @@ import { Link } from 'react-router-dom';
 import {
   api,
   type ActivityEntry,
+  type GridEventDto,
   type OpportunitySummary,
   type RunResponse,
 } from '../api.js';
+import { GridEventCard } from '../components/GridEventCard.js';
+import { GridTopologyDisclaimer } from '../components/GridTopologyDisclaimer.js';
 
 const EVENT_ICON: Record<string, string> = {
   SCAN_STARTED: '⏱',
@@ -13,6 +16,9 @@ const EVENT_ICON: Record<string, string> = {
   EVIDENCE_EXTRACTED: '📄',
   SIGNAL_DETECTED: '⚡',
   GRID_CONTEXT_CHECKED: '🗺',
+  GRID_UPDATE_DETECTED: '⚡',
+  GRID_UPDATE_CHANGED: '🔄',
+  GRID_UPDATE_UNCHANGED: '💤',
   OPPORTUNITY_SCORED: '📊',
   DECISION_MADE: '🧭',
   DOSSIER_CREATED: '📁',
@@ -27,15 +33,21 @@ const EVENT_ICON: Record<string, string> = {
 export default function RadarPage() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [opportunities, setOpportunities] = useState<OpportunitySummary[]>([]);
+  const [gridEvents, setGridEvents] = useState<GridEventDto[]>([]);
   const [running, setRunning] = useState(false);
   const [lastRun, setLastRun] = useState<RunResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [act, opps] = await Promise.all([api.recentActivity(80), api.opportunities()]);
+      const [act, opps, ge] = await Promise.all([
+        api.recentActivity(80),
+        api.opportunities(),
+        api.gridEvents(6),
+      ]);
       setActivity(act);
       setOpportunities(opps);
+      setGridEvents(ge);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -90,6 +102,36 @@ export default function RadarPage() {
         )}
         {error && <span className="text-xs text-rose-400">error: {error}</span>}
       </div>
+
+      <section>
+        <div className="flex items-baseline justify-between mb-3">
+          <h2 className="text-sm uppercase tracking-wider text-slate-400">
+            Recent grid updates
+          </h2>
+          <Link to="/grid-events" className="text-xs text-radar-accent hover:underline">
+            view all →
+          </Link>
+        </div>
+        {gridEvents.length === 0 ? (
+          <div className="text-slate-500 text-sm border border-dashed border-slate-700 rounded p-4">
+            No grid updates yet. Feed{' '}
+            <code className="text-slate-300 bg-slate-800/50 rounded px-1">liander.nl</code> /{' '}
+            <code className="text-slate-300 bg-slate-800/50 rounded px-1">enexis.nl</code> /{' '}
+            <code className="text-slate-300 bg-slate-800/50 rounded px-1">stedin.net</code> URLs
+            into <code className="text-slate-300 bg-slate-800/50 rounded px-1">APIFY_START_URLS</code>{' '}
+            and trigger a scan.
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {gridEvents.map((ge) => (
+              <li key={ge.id}>
+                <GridEventCard event={ge} variant="compact" />
+              </li>
+            ))}
+          </ul>
+        )}
+        <GridTopologyDisclaimer variant="block" />
+      </section>
 
       <section>
         <h2 className="text-sm uppercase tracking-wider text-slate-400 mb-3">

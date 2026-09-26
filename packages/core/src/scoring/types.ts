@@ -19,6 +19,13 @@ export interface ScoreComponents {
   corroboration: number;
   /** 0-10 — local collaboration context (industrial park etc.). */
   collaboration: number;
+  /**
+   * 0-15 — freshness bonus when recent grid_update events geographically
+   * overlap this business's location. Additive to the `congestion` baseline
+   * (which is the GridContextProvider result); the two are independent
+   * signals. Capped so it can't dominate the score.
+   */
+  gridEventCorrelation: number;
 }
 
 export interface ScoringInput {
@@ -34,6 +41,17 @@ export interface ScoringInput {
   onIndustrialPark: boolean;
   /** Grid context; null when we have not yet checked. */
   congestion: CongestionContext | null;
+  /**
+   * Optional pre-computed grid_update correlation. Callers use
+   * `GridBusinessCorrelationService` and pass the result here. Omit or set to
+   * `{ bonus: 0 }` when no grid events are known — the score is then
+   * identical to the pre-correlation behaviour (this keeps existing tests
+   * and policy thresholds untouched).
+   */
+  gridEventCorrelation?: {
+    bonus: number;
+    explanation?: string;
+  };
   /** ISO date used as "now" — injected for reproducible tests. */
   now?: string;
 }

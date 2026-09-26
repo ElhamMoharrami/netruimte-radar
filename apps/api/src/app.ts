@@ -4,6 +4,7 @@ import type { AppContext } from './context.js';
 import { activityRoutes, opportunitiesRoutes } from './routes/opportunities.js';
 import { runsRoutes } from './routes/runs.js';
 import { demoRoutes } from './routes/demo.js';
+import { gridEventsRoutes } from './routes/gridEvents.js';
 
 /**
  * Build the Hono app around an injected {@link AppContext}. The autonomous-run
@@ -27,6 +28,7 @@ export function createApp(ctx: AppContext) {
   app.route('/api', activityRoutes(ctx));
   app.route('/api', runsRoutes(ctx));
   app.route('/api', demoRoutes(ctx));
+  app.route('/api', gridEventsRoutes(ctx));
 
   return app;
 }

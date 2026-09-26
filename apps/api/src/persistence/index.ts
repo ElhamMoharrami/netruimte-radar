@@ -9,6 +9,7 @@ import { createActivityLogRepository } from './activityRepo.js';
 import { createRunHistoryRepository } from './runHistoryRepo.js';
 import { createDossierRepository } from './dossierRepo.js';
 import { createActionQueueRepository } from './actionQueueRepo.js';
+import { createGridEventRepository } from './gridEventRepo.js';
 
 export function createRepositories(db: Db): Repositories {
   return {
@@ -21,6 +22,7 @@ export function createRepositories(db: Db): Repositories {
     runs: createRunHistoryRepository(db),
     dossiers: createDossierRepository(db),
     actionQueue: createActionQueueRepository(db),
+    gridEvents: createGridEventRepository(db),
   };
 }
 

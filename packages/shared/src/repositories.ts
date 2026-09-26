@@ -4,6 +4,7 @@ import type {
   Decision,
   Dossier,
   Evidence,
+  GridEvent,
   Opportunity,
   QueuedAction,
   QueueStatus,
@@ -68,6 +69,17 @@ export interface ActionQueueRepository {
   listByStatus(status: QueueStatus): Promise<QueuedAction[]>;
 }
 
+export interface GridEventRepository {
+  insert(event: GridEvent): Promise<GridEvent>;
+  findById(id: string): Promise<GridEvent | null>;
+  /** Latest event for a given source URL, or null. Used by the dedup check. */
+  findLatestBySourceUrl(sourceUrl: string): Promise<GridEvent | null>;
+  /** Same-content check — returns the previously-persisted event when
+   *  (sourceUrl, contentHash) already exists. Enables O(1) UNCHANGED lookup. */
+  findBySourceAndHash(sourceUrl: string, contentHash: string): Promise<GridEvent | null>;
+  list(limit?: number): Promise<GridEvent[]>;
+}
+
 export interface Repositories {
   companies: CompanyRepository;
   evidence: EvidenceRepository;
@@ -78,4 +90,5 @@ export interface Repositories {
   runs: RunHistoryRepository;
   dossiers: DossierRepository;
   actionQueue: ActionQueueRepository;
+  gridEvents: GridEventRepository;
 }

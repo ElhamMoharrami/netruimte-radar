@@ -125,4 +125,24 @@ CREATE TABLE IF NOT EXISTS action_queue (
 );
 CREATE INDEX IF NOT EXISTS idx_queue_opp ON action_queue(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_queue_status ON action_queue(status);
+
+CREATE TABLE IF NOT EXISTS grid_events (
+  id TEXT PRIMARY KEY,
+  operator TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  regions TEXT NOT NULL DEFAULT '[]',
+  municipalities TEXT NOT NULL DEFAULT '[]',
+  stations TEXT NOT NULL DEFAULT '[]',
+  direction TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  evidence_excerpt TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  published_at TEXT,
+  detected_at TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  content_hash TEXT NOT NULL,
+  UNIQUE(source_url, content_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_grid_events_source ON grid_events(source_url);
+CREATE INDEX IF NOT EXISTS idx_grid_events_detected ON grid_events(detected_at);
 `;

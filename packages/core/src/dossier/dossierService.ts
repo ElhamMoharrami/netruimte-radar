@@ -157,6 +157,7 @@ export class OpportunityDossierService {
             congestion: 0,
             timing: 0,
             corroboration: 0,
+            gridEventCorrelation: 0,
             collaboration: 0,
           },
           explanation: ['Rebuilt from persisted opportunity — component breakdown not stored.'],

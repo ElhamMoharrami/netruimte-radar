@@ -5,6 +5,7 @@ import OpportunitiesPage from './pages/OpportunitiesPage.js';
 import OpportunityDetailPage from './pages/OpportunityDetailPage.js';
 import RunsPage from './pages/RunsPage.js';
 import DemoPage from './pages/DemoPage.js';
+import GridEventsPage from './pages/GridEventsPage.js';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
           <Route path="radar" element={<RadarPage />} />
           <Route path="opportunities" element={<OpportunitiesPage />} />
           <Route path="opportunities/:id" element={<OpportunityDetailPage />} />
+          <Route path="grid-events" element={<GridEventsPage />} />
           <Route path="runs" element={<RunsPage />} />
           <Route path="demo" element={<DemoPage />} />
           <Route path="*" element={<Navigate to="/radar" replace />} />

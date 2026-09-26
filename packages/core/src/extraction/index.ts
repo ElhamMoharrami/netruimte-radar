@@ -14,11 +14,21 @@ export {
 } from './factory.js';
 export {
   RuleBasedGridUpdateExtractor,
+  computeGridEventContentHash,
   detectOperatorFromUrl,
-  detectUpdateType,
+  detectEventType,
+  detectDirection,
   detectRegions,
+  detectMunicipalities,
+  detectStations,
   type GridUpdateExtractor,
   type GridUpdateExtractorInput,
   type GridUpdateExtraction,
   type GridOperator,
+  type GridEventType,
+  type GridDirection,
 } from './gridUpdateExtractor.js';
+export {
+  FallbackGridUpdateExtractor,
+  type GridUpdateFallbackOptions,
+} from './gridUpdateFallback.js';

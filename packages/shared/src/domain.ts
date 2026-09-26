@@ -78,6 +78,8 @@ export const ActivityEventType = z.enum([
   'SCAN_COMPLETED',
   'ACTION_DISPATCHED',
   'GRID_UPDATE_DETECTED',
+  'GRID_UPDATE_UNCHANGED',
+  'GRID_UPDATE_CHANGED',
 ]);
 export type ActivityEventType = z.infer<typeof ActivityEventType>;
 
@@ -134,6 +136,16 @@ export const CongestionContextSchema = z.object({
   sourceUrl: z.string().url().nullable(),
   checkedAt: IsoDate,
   notes: z.string().nullable(),
+  /**
+   * Municipality this reading was resolved to. Populated by
+   * NetbeheerNlGridContextProvider from PDOK; used by
+   * GridBusinessCorrelationService to line up business locations against
+   * grid_update events. Optional so existing rows / demo provider don't need
+   * to change.
+   */
+  gemeente: z.string().nullable().optional(),
+  /** Province — same story, populated by PDOK-backed provider. */
+  provincie: z.string().nullable().optional(),
 });
 export type CongestionContext = z.infer<typeof CongestionContextSchema>;
 
@@ -261,6 +273,47 @@ export type Dossier = z.infer<typeof DossierSchema>;
 
 export const QueueStatus = z.enum(['pending', 'dispatched', 'cancelled', 'failed']);
 export type QueueStatus = z.infer<typeof QueueStatus>;
+
+// ---------------------------------------------------------------------------
+// Grid events (V5 — persistence for grid_update pipeline)
+// ---------------------------------------------------------------------------
+
+export const GridOperatorZ = z.enum(['liander', 'enexis', 'stedin', 'unknown']);
+export type GridOperator = z.infer<typeof GridOperatorZ>;
+
+export const GridEventTypeZ = z.enum([
+  'new_bottleneck',
+  'capacity_update',
+  'congestion_study_completed',
+  'waiting_list_update',
+  'capacity_released',
+  'other',
+]);
+export type GridEventType = z.infer<typeof GridEventTypeZ>;
+
+export const GridDirectionZ = z.enum(['consumption', 'feed_in', 'both', 'unknown']);
+export type GridDirection = z.infer<typeof GridDirectionZ>;
+
+export const GridEventSchema = z.object({
+  id: z.string(),
+  operator: GridOperatorZ,
+  eventType: GridEventTypeZ,
+  regions: z.array(z.string()),
+  municipalities: z.array(z.string()),
+  stations: z.array(z.string()),
+  direction: GridDirectionZ,
+  summary: z.string(),
+  evidenceExcerpt: z.string(),
+  sourceUrl: z.string(),
+  publishedAt: IsoDate.nullable(),
+  detectedAt: IsoDate,
+  confidence: z.number().min(0).max(1),
+  /** Stable hash of (operator, eventType, regions, municipalities, stations,
+   *  direction). Two events with the same sourceUrl and contentHash are the
+   *  same event. See computeGridEventContentHash() in @netruimte/core. */
+  contentHash: z.string(),
+});
+export type GridEvent = z.infer<typeof GridEventSchema>;
 
 export const QueuedActionSchema = z.object({
   id: z.string(),
