@@ -201,9 +201,24 @@ export class AutonomousRunService {
       try {
         const sources = await this.deps.sources.discover();
         summary.sourcesDiscovered = sources.length;
+        // Break out per-class counts so operators can audit routing at the
+        // boundary without replaying the whole run. `undefined` sourceClass
+        // is folded into 'business_signal' because that's how the router
+        // treats it (see processSource).
+        const byClass = { business_signal: 0, grid_update: 0 };
+        for (const s of sources) {
+          if (s.sourceClass === 'grid_update') byClass.grid_update += 1;
+          else byClass.business_signal += 1;
+        }
         await this.logger.log('SOURCE_DISCOVERED', {
-          message: `${sources.length} source(s) discovered${attempt > 1 ? ' (after retry)' : ''}`,
-          metadata: { runId, count: sources.length, provider: this.deps.sources.name, attempt },
+          message: `${sources.length} source(s) discovered${attempt > 1 ? ' (after retry)' : ''} (business=${byClass.business_signal}, grid=${byClass.grid_update})`,
+          metadata: {
+            runId,
+            count: sources.length,
+            provider: this.deps.sources.name,
+            attempt,
+            byClass,
+          },
         });
         return sources;
       } catch (err) {
@@ -251,6 +266,9 @@ export class AutonomousRunService {
       metadata: {
         runId,
         sourceUrl: source.url,
+        // Explicit for audit — this log line only fires on the business
+        // pipeline, so sourceClass is always 'business_signal' here.
+        sourceClass: 'business_signal',
         extractor: extraction.extractor,
         signalType: extraction.signalType,
         confidence: extraction.confidence,
@@ -328,7 +346,7 @@ export class AutonomousRunService {
       onIndustrialPark: false,
       congestion: gridContext,
       gridEventCorrelation: {
-        bonus: correlation.freshnessBonus,
+        bonus: correlation.scoreBonus,
         explanation: correlation.explanation,
       },
       now: this.now(),
@@ -348,7 +366,10 @@ export class AutonomousRunService {
         components: scoring.components,
         explanation: scoring.explanation,
         gridEventCorrelation: {
-          bonus: correlation.freshnessBonus,
+          // Wire field name `bonus` kept for UI/backward compat; internal
+          // service returns `scoreBonus`.
+          bonus: correlation.scoreBonus,
+          geographicMatch: correlation.geographicMatch,
           confidence: correlation.confidence,
           explanation: correlation.explanation,
           matchedEventIds: correlation.matchedEvents.map((e) => e.id),
@@ -432,6 +453,7 @@ export class AutonomousRunService {
           metadata: {
             runId,
             sourceUrl: event.sourceUrl,
+            sourceClass: 'grid_update',
             gridEventId: existing.id,
             contentHash,
             operator: event.operator,
@@ -469,6 +491,7 @@ export class AutonomousRunService {
         metadata: {
           runId,
           sourceUrl: event.sourceUrl,
+          sourceClass: 'grid_update',
           gridEventId: persisted.id,
           previousGridEventId: anyPrior?.id ?? null,
           extractor: event.extractor,
@@ -557,7 +580,7 @@ export class AutonomousRunService {
       onIndustrialPark: false,
       congestion: gridContext,
       gridEventCorrelation: {
-        bonus: correlation.freshnessBonus,
+        bonus: correlation.scoreBonus,
         explanation: correlation.explanation,
       },
       now: this.now(),
@@ -604,6 +627,22 @@ export class AutonomousRunService {
         triggeringEvidenceId: evidence.id,
         triggeringSourceUrl: source.url,
         reason: policyDecision.reason,
+        // Persist the fresh correlation with the reassessment so the UI can
+        // explain the score delta — otherwise the detail page shows stale
+        // correlation from the initial scoring.
+        gridEventCorrelation: {
+          bonus: correlation.scoreBonus,
+          geographicMatch: correlation.geographicMatch,
+          confidence: correlation.confidence,
+          explanation: correlation.explanation,
+          matchedEventIds: correlation.matchedEvents.map((e) => e.id),
+          matchedEventSummaries: correlation.matchedEvents.map((e) => ({
+            id: e.id,
+            operator: e.operator,
+            eventType: e.eventType,
+            sourceUrl: e.sourceUrl,
+          })),
+        },
       },
     });
 

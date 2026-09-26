@@ -32,16 +32,29 @@ export interface CorrelationInput {
   /**
    * Per-match points. Kept as options so future tuning doesn't require a code
    * change. Defaults follow the spec:
-   *   +10 municipality, +5 region, cap 15.
+   *   +10 municipality, +5 region, cap 10.
    */
   municipalityBonus?: number;
   regionBonus?: number;
   totalCap?: number;
 }
 
+/** Best geographic evidence found for the correlation. */
+export type GeographicMatch = 'municipality' | 'region' | 'none';
+
 export interface CorrelationResult {
   matchedEvents: GridEvent[];
-  freshnessBonus: number;
+  /**
+   * Best geographic evidence class we found:
+   *   'municipality' — one or more events name the company's exact city.
+   *   'region'       — no municipality match, but events name the province.
+   *   'none'         — no match, or no location evidence on the company.
+   * Exposed so the UI can render "matched by municipality/region" without
+   * re-deriving it from the explanation string.
+   */
+  geographicMatch: GeographicMatch;
+  /** Additive score bonus (0..totalCap). Named `scoreBonus` in the public spec. */
+  scoreBonus: number;
   explanation: string;
   confidence: number;
 }
@@ -54,7 +67,7 @@ export class GridBusinessCorrelationService implements GridBusinessCorrelator {
   correlate(input: CorrelationInput): CorrelationResult {
     const municipalityBonus = input.municipalityBonus ?? 10;
     const regionBonus = input.regionBonus ?? 5;
-    const totalCap = input.totalCap ?? 15;
+    const totalCap = input.totalCap ?? 10;
     const recencyDays = input.recencyDays ?? 90;
 
     const city = normalize(input.company.city);
@@ -62,7 +75,8 @@ export class GridBusinessCorrelationService implements GridBusinessCorrelator {
     if (!city && !provincie) {
       return {
         matchedEvents: [],
-        freshnessBonus: 0,
+        geographicMatch: 'none',
+        scoreBonus: 0,
         explanation: 'no location evidence on company — no correlation attempted',
         confidence: 0,
       };
@@ -102,8 +116,9 @@ export class GridBusinessCorrelationService implements GridBusinessCorrelator {
       }
     }
 
-    const freshnessBonus = Math.min(totalCap, rawBonus);
+    const scoreBonus = Math.min(totalCap, rawBonus);
     const capped = rawBonus > totalCap;
+    const geographicMatch: GeographicMatch = bestMatchKind ?? 'none';
     const confidence =
       bestMatchKind === 'municipality'
         ? 0.9
@@ -118,10 +133,10 @@ export class GridBusinessCorrelationService implements GridBusinessCorrelator {
       provincie,
       recencyDays,
       capped,
-      freshnessBonus,
+      scoreBonus,
     });
 
-    return { matchedEvents, freshnessBonus, explanation, confidence };
+    return { matchedEvents, geographicMatch, scoreBonus, explanation, confidence };
   }
 }
 
@@ -138,7 +153,7 @@ function buildExplanation(params: {
   provincie: string | null;
   recencyDays: number;
   capped: boolean;
-  freshnessBonus: number;
+  scoreBonus: number;
 }): string {
   if (params.matchedCount === 0) {
     const loc = [params.city, params.provincie].filter(Boolean).join(' / ') || 'location unknown';
@@ -149,5 +164,5 @@ function buildExplanation(params: {
       ? `municipality (${params.city ?? '?'})`
       : `region (${params.provincie ?? '?'})`;
   const cap = params.capped ? ' (capped)' : '';
-  return `${params.matchedCount} recent grid_update event(s) mention this ${kind} within ${params.recencyDays} days — +${params.freshnessBonus}${cap}. Correlation is geographic mention only; it does NOT imply grid-neighbor topology or direct impact.`;
+  return `${params.matchedCount} recent grid_update event(s) mention this ${kind} within ${params.recencyDays} days — +${params.scoreBonus}${cap}. Correlation is geographic mention only; it does NOT imply grid-neighbor topology or direct impact.`;
 }

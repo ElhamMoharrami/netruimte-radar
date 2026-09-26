@@ -210,6 +210,12 @@ export interface MatchedGridEventSummary {
 
 export interface GridEventCorrelationDto {
   bonus: number;
+  /**
+   * Best geographic evidence class the correlator found. Optional because
+   * older activity-log rows written before this field existed will not
+   * carry it — the UI should treat `undefined` as `'none'`.
+   */
+  geographicMatch?: 'municipality' | 'region' | 'none';
   confidence: number;
   explanation: string;
   matchedEventIds: string[];

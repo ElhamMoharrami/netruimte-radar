@@ -34,7 +34,7 @@ describe('GridBusinessCorrelationService', () => {
       gridEvents: [ev()],
       now: NOW,
     });
-    expect(r.freshnessBonus).toBe(0);
+    expect(r.scoreBonus).toBe(0);
     expect(r.matchedEvents).toEqual([]);
     expect(r.confidence).toBe(0);
     expect(r.explanation).toMatch(/no location evidence/);
@@ -46,7 +46,7 @@ describe('GridBusinessCorrelationService', () => {
       gridEvents: [ev()], // Amsterdam / Noord-Holland
       now: NOW,
     });
-    expect(r.freshnessBonus).toBe(0);
+    expect(r.scoreBonus).toBe(0);
     expect(r.matchedEvents).toEqual([]);
     expect(r.explanation).toMatch(/no recent grid_update events/i);
   });
@@ -57,7 +57,7 @@ describe('GridBusinessCorrelationService', () => {
       gridEvents: [ev()],
       now: NOW,
     });
-    expect(r.freshnessBonus).toBe(10);
+    expect(r.scoreBonus).toBe(10);
     expect(r.confidence).toBe(0.9);
     expect(r.matchedEvents.map((e) => e.id)).toEqual(['gev_1']);
     expect(r.explanation).toMatch(/municipality \(amsterdam\)/i);
@@ -70,7 +70,7 @@ describe('GridBusinessCorrelationService', () => {
       gridEvents: [ev()], // municipalities:[Amsterdam], regions:[Noord-Holland]
       now: NOW,
     });
-    expect(r.freshnessBonus).toBe(5);
+    expect(r.scoreBonus).toBe(5);
     expect(r.confidence).toBe(0.5);
     expect(r.explanation).toMatch(/region \(noord-holland\)/i);
   });
@@ -82,19 +82,19 @@ describe('GridBusinessCorrelationService', () => {
       now: NOW,
     });
     // Same event, but we should NOT stack both — municipality wins.
-    expect(r.freshnessBonus).toBe(10);
+    expect(r.scoreBonus).toBe(10);
     expect(r.confidence).toBe(0.9);
     expect(r.matchedEvents).toHaveLength(1);
   });
 
-  it('multiple matching events stack — capped at 15 by default', () => {
+  it('multiple matching events stack — capped at 10 by default', () => {
     const r = svc.correlate({
       company: { city: 'Amsterdam' },
       gridEvents: [ev({ id: 'a' }), ev({ id: 'b' }), ev({ id: 'c' })],
       now: NOW,
     });
-    // Raw would be 30, cap trims to 15.
-    expect(r.freshnessBonus).toBe(15);
+    // Raw would be 30, cap trims to 10 per spec.
+    expect(r.scoreBonus).toBe(10);
     expect(r.explanation).toMatch(/\(capped\)/);
     expect(r.matchedEvents.map((e) => e.id).sort()).toEqual(['a', 'b', 'c']);
   });
@@ -110,7 +110,7 @@ describe('GridBusinessCorrelationService', () => {
       recencyDays: 30,
     });
     expect(r.matchedEvents.map((e) => e.id)).toEqual(['recent']);
-    expect(r.freshnessBonus).toBe(10);
+    expect(r.scoreBonus).toBe(10);
   });
 
   it('city / region match is case-insensitive', () => {
@@ -119,7 +119,7 @@ describe('GridBusinessCorrelationService', () => {
       gridEvents: [ev({ municipalities: ['amsterdam'] })],
       now: NOW,
     });
-    expect(r.freshnessBonus).toBe(10);
+    expect(r.scoreBonus).toBe(10);
   });
 
   it('explanation states MENTION only and explicitly disclaims topology / direct impact', () => {
@@ -148,6 +148,142 @@ describe('GridBusinessCorrelationService', () => {
       totalCap: 6,
     });
     // raw 4+4=8, capped at 6
-    expect(r.freshnessBonus).toBe(6);
+    expect(r.scoreBonus).toBe(6);
+  });
+
+  // ─── geographicMatch field ─────────────────────────────────────────────
+  //
+  // The spec explicitly returns `geographicMatch: 'municipality' | 'region' | 'none'`
+  // so the UI can badge/filter without re-parsing the explanation string.
+
+  it('geographicMatch is "municipality" on a city hit', () => {
+    const r = svc.correlate({
+      company: { city: 'Amsterdam' },
+      gridEvents: [ev()],
+      now: NOW,
+    });
+    expect(r.geographicMatch).toBe('municipality');
+  });
+
+  it('geographicMatch is "region" on a province-only hit', () => {
+    const r = svc.correlate({
+      company: { city: 'Zaanstad', provincie: 'Noord-Holland' },
+      gridEvents: [ev()],
+      now: NOW,
+    });
+    expect(r.geographicMatch).toBe('region');
+  });
+
+  it('geographicMatch is "none" when no events match', () => {
+    const r = svc.correlate({
+      company: { city: 'Rotterdam', provincie: 'Zuid-Holland' },
+      gridEvents: [ev()],
+      now: NOW,
+    });
+    expect(r.geographicMatch).toBe('none');
+  });
+
+  it('geographicMatch is "none" when the company has no location evidence', () => {
+    const r = svc.correlate({
+      company: { city: null, provincie: null },
+      gridEvents: [ev()],
+      now: NOW,
+    });
+    expect(r.geographicMatch).toBe('none');
+  });
+
+  // ─── Spec cases: Ede+Ede, Zwolle+Overijssel, unrelated, missing ─────────
+  //
+  // These are the four cases explicitly enumerated in the requirement,
+  // grounded in real Dutch geography (Ede is a Gelderland gemeente, Zwolle
+  // is an Overijssel gemeente).
+
+  it('Ede company + Ede grid event → +10 municipality match', () => {
+    const r = svc.correlate({
+      company: { city: 'Ede', provincie: 'Gelderland' },
+      gridEvents: [
+        ev({
+          id: 'gev_ede',
+          operator: 'liander',
+          regions: ['Gelderland'],
+          municipalities: ['Ede'],
+          summary: 'Liander: nieuw knelpunt afname Ede',
+        }),
+      ],
+      now: NOW,
+    });
+    expect(r.geographicMatch).toBe('municipality');
+    expect(r.scoreBonus).toBe(10);
+    expect(r.confidence).toBe(0.9);
+    expect(r.matchedEvents).toHaveLength(1);
+    expect(r.matchedEvents[0]!.id).toBe('gev_ede');
+    expect(r.explanation).toMatch(/municipality \(ede\)/i);
+    // Never claim direct impact — spec rule 6.
+    expect(r.explanation).not.toMatch(/directly affects|is affected by/i);
+    expect(r.explanation).toMatch(/does NOT imply grid-neighbor/i);
+  });
+
+  it('Zwolle company + Overijssel-only grid event → +5 region match', () => {
+    const r = svc.correlate({
+      company: { city: 'Zwolle', provincie: 'Overijssel' },
+      gridEvents: [
+        ev({
+          id: 'gev_ov',
+          operator: 'enexis',
+          regions: ['Overijssel'],
+          // Event names a different municipality in the same province.
+          municipalities: ['Deventer'],
+          summary: 'Enexis: netverzwaring Deventer',
+        }),
+      ],
+      now: NOW,
+    });
+    expect(r.geographicMatch).toBe('region');
+    expect(r.scoreBonus).toBe(5);
+    expect(r.confidence).toBe(0.5);
+    expect(r.matchedEvents).toHaveLength(1);
+    expect(r.matchedEvents[0]!.id).toBe('gev_ov');
+    expect(r.explanation).toMatch(/region \(overijssel\)/i);
+  });
+
+  it('unrelated location → +0, geographicMatch "none", empty matches', () => {
+    const r = svc.correlate({
+      company: { city: 'Groningen', provincie: 'Groningen' },
+      gridEvents: [
+        ev({
+          id: 'gev_ov',
+          regions: ['Overijssel'],
+          municipalities: ['Zwolle'],
+        }),
+        ev({
+          id: 'gev_ze',
+          regions: ['Zeeland'],
+          municipalities: ['Middelburg'],
+        }),
+      ],
+      now: NOW,
+    });
+    expect(r.geographicMatch).toBe('none');
+    expect(r.scoreBonus).toBe(0);
+    expect(r.confidence).toBe(0);
+    expect(r.matchedEvents).toEqual([]);
+    expect(r.explanation).toMatch(/no recent grid_update events mention/i);
+  });
+
+  it('missing location → +0, geographicMatch "none", short-circuits before scanning events', () => {
+    const r = svc.correlate({
+      company: { city: null, provincie: null },
+      gridEvents: [
+        ev({ municipalities: ['Ede'] }),
+        ev({ regions: ['Gelderland'] }),
+      ],
+      now: NOW,
+    });
+    expect(r.geographicMatch).toBe('none');
+    expect(r.scoreBonus).toBe(0);
+    expect(r.confidence).toBe(0);
+    expect(r.matchedEvents).toEqual([]);
+    expect(r.explanation).toMatch(/no location evidence on company/i);
+    // Spec rule 3: "No geographic evidence → no match" (regardless of events).
   });
 });
