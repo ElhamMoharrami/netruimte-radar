@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import type { Repositories } from '@netruimte/shared';
+import { newId, type Repositories } from '@netruimte/shared';
 import {
   ApifySourceDiscoveryProvider,
   AutonomousRunService,
@@ -103,13 +103,42 @@ export function createContext(opts: CreateContextOptions = {}): AppContext {
     wiring.sourceProvider = sources.name;
     wiring.sourceProviderReason = 'test override';
   } else if (process.env.APIFY_TOKEN && (process.env.APIFY_ACTOR_ID || process.env.APIFY_DATASET_ID)) {
+    const startUrls = parseStartUrls(process.env.APIFY_START_URLS);
+    const actorInput = parseActorInput(process.env.APIFY_ACTOR_INPUT);
     sources = new ApifySourceDiscoveryProvider({
       token: process.env.APIFY_TOKEN,
       actorId: process.env.APIFY_ACTOR_ID ?? '',
       datasetId: process.env.APIFY_DATASET_ID ?? undefined,
+      startUrls,
+      actorInput,
+      onEvent: (event, meta) => {
+        // Non-blocking best-effort diagnostic write. Never blocks discovery.
+        void repos.activity
+          .append({
+            id: newId.activity(),
+            opportunityId: null,
+            eventType:
+              event === 'apify.error'
+                ? 'RETRY_FAILED'
+                : event === 'apify.run.terminal'
+                  ? 'SOURCE_DISCOVERED'
+                  : 'SCAN_STARTED',
+            message: `[apify] ${event}`,
+            metadata: { ...meta, event },
+            createdAt: new Date().toISOString(),
+          })
+          .catch(() => undefined);
+      },
     });
     wiring.sourceProvider = 'apify';
-    wiring.sourceProviderReason = 'APIFY_TOKEN + actor/dataset id present';
+    wiring.sourceProviderReason = [
+      'APIFY_TOKEN + actor/dataset id present',
+      actorInput
+        ? 'input=APIFY_ACTOR_INPUT (raw JSON)'
+        : startUrls.length > 0
+          ? `input=APIFY_START_URLS (${startUrls.length} url${startUrls.length === 1 ? '' : 's'})`
+          : 'input=empty (no APIFY_START_URLS or APIFY_ACTOR_INPUT set — actor will run with empty input)',
+    ].join('; ');
   } else {
     if (!demoMode) {
       throw new Error(
@@ -273,4 +302,29 @@ function parseAllowlist(raw: string | undefined): string[] {
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+}
+
+function parseStartUrls(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function parseActorInput(raw: string | undefined): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    // eslint-disable-next-line no-console
+    console.warn('[context] APIFY_ACTOR_INPUT must be a JSON object; ignoring');
+    return undefined;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[context] APIFY_ACTOR_INPUT is not valid JSON; ignoring:', (err as Error).message);
+    return undefined;
+  }
 }
