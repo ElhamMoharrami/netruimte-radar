@@ -64,6 +64,7 @@ function makeCtx(
     databaseProviderReason: 'test',
   };
   return {
+    db,
     repos,
     demoMode,
     serviceToken,

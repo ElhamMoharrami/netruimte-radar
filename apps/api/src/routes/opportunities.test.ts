@@ -123,7 +123,7 @@ async function seedAutonomousRun(db: Db) {
   return { companyId, oppId };
 }
 
-function makeCtx(repos: ReturnType<typeof createRepositories>): AppContext {
+function makeCtx(db: Db, repos: ReturnType<typeof createRepositories>): AppContext {
   const sources = new DemoSourceDiscoveryProvider('/dev/null');
   const extractor = new RuleBasedEvidenceExtractor();
   const grid = new DemoGridContextProvider();
@@ -155,6 +155,7 @@ function makeCtx(repos: ReturnType<typeof createRepositories>): AppContext {
     databaseProviderReason: 'test',
   };
   return {
+    db,
     repos,
     demoMode: true,
     serviceToken: null,
@@ -183,7 +184,7 @@ describe('API routes with seeded autonomous run', () => {
   it('lists opportunities', async () => {
     const { oppId } = await seedAutonomousRun(db);
     const repos = createRepositories(db);
-    const app = createApp(makeCtx(repos));
+    const app = createApp(makeCtx(db, repos));
     const res = await app.request('/api/opportunities');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: Array<{ id: string; score: number }> };
@@ -195,7 +196,7 @@ describe('API routes with seeded autonomous run', () => {
   it('returns detail with company + signals + decisions', async () => {
     const { oppId } = await seedAutonomousRun(db);
     const repos = createRepositories(db);
-    const app = createApp(makeCtx(repos));
+    const app = createApp(makeCtx(db, repos));
     const res = await app.request(`/api/opportunities/${oppId}`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -212,7 +213,7 @@ describe('API routes with seeded autonomous run', () => {
 
   it('returns 404 for unknown opportunity', async () => {
     const repos = createRepositories(db);
-    const app = createApp(makeCtx(repos));
+    const app = createApp(makeCtx(db, repos));
     const res = await app.request('/api/opportunities/does-not-exist');
     expect(res.status).toBe(404);
   });
@@ -220,7 +221,7 @@ describe('API routes with seeded autonomous run', () => {
   it('returns activity in chronological order', async () => {
     const { oppId } = await seedAutonomousRun(db);
     const repos = createRepositories(db);
-    const app = createApp(makeCtx(repos));
+    const app = createApp(makeCtx(db, repos));
     const res = await app.request(`/api/opportunities/${oppId}/activity`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { activity: Array<{ eventType: string }> };
@@ -240,7 +241,7 @@ describe('API routes with seeded autonomous run', () => {
   it('returns recent activity across all opportunities', async () => {
     await seedAutonomousRun(db);
     const repos = createRepositories(db);
-    const app = createApp(makeCtx(repos));
+    const app = createApp(makeCtx(db, repos));
     const res = await app.request('/api/activity/recent?limit=3');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: Array<{ eventType: string }> };
@@ -258,7 +259,7 @@ describe('API routes with seeded autonomous run', () => {
   it('lists companies for the businesses-monitored dashboard tile', async () => {
     await seedAutonomousRun(db);
     const repos = createRepositories(db);
-    const app = createApp(makeCtx(repos));
+    const app = createApp(makeCtx(db, repos));
     const res = await app.request('/api/companies');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: Array<{ name: string }> };

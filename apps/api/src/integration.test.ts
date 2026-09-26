@@ -66,6 +66,7 @@ function buildCtx(db: Db, opts: BuildOpts = {}): AppContext {
     databaseProviderReason: 'test',
   };
   return {
+    db,
     repos,
     demoMode: true,
     serviceToken: opts.serviceToken ?? null,

@@ -25,6 +25,13 @@ import {
 import { openDb, openLibsqlDb, createRepositories, type Db } from './persistence/index.js';
 
 export interface AppContext {
+  /**
+   * The underlying SqlClient (node:sqlite locally, libSQL/Turso in
+   * production). Exposed for read-only diagnostics that need SQL primitives
+   * outside the repository surface (JSON metadata filters, aggregations).
+   * Callers MUST NOT mutate through this — write paths go through repos.
+   */
+  db: Db;
   repos: Repositories;
   demoMode: boolean;
   serviceToken: string | null;
@@ -306,6 +313,7 @@ export async function createContext(opts: CreateContextOptions = {}): Promise<Ap
   };
 
   return {
+    db,
     repos,
     demoMode,
     serviceToken,

@@ -55,6 +55,7 @@ function buildContext(
     databaseProviderReason: 'test',
   };
   return {
+    db,
     repos,
     demoMode: true,
     serviceToken,

@@ -5,6 +5,7 @@ import { activityRoutes, companiesRoutes, opportunitiesRoutes } from './routes/o
 import { runsRoutes } from './routes/runs.js';
 import { demoRoutes } from './routes/demo.js';
 import { gridEventsRoutes } from './routes/gridEvents.js';
+import { adminDiagnosticsRoutes } from './routes/adminDiagnostics.js';
 
 /**
  * Build the Hono app around an injected {@link AppContext}. The autonomous-run
@@ -30,6 +31,8 @@ export function createApp(ctx: AppContext) {
   app.route('/api', runsRoutes(ctx));
   app.route('/api', demoRoutes(ctx));
   app.route('/api', gridEventsRoutes(ctx));
+  // TEMPORARY — remove after the mis-attributed-failures investigation closes.
+  app.route('/api', adminDiagnosticsRoutes(ctx));
 
   return app;
 }
