@@ -144,10 +144,10 @@ overrides** if the toml is left in charge:
 | Setting | Value |
 |---|---|
 | Base directory | *(leave empty — repo root)* |
-| Build command | `corepack enable && pnpm install --frozen-lockfile && pnpm build` |
+| Build command | `pnpm install --frozen-lockfile && pnpm build` |
 | Publish directory | `apps/web/dist` |
 | Functions directory | `netlify/functions` |
-| Node version | `22` (via `NODE_VERSION` env in `netlify.toml`) |
+| Node version | `24` (via `NODE_VERSION` env in `netlify.toml`, matches `.nvmrc`) |
 | Package manager | pnpm (auto-detected from `packageManager` in root `package.json`) |
 
 ### Expected production URLs

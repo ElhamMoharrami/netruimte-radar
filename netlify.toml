@@ -12,18 +12,20 @@
 # ==============================================================================
 
 [build]
-  # `corepack enable` guarantees pnpm is on PATH even on older build images.
+  # Netlify's build image ships pnpm and resolves it from the root
+  # package.json's `packageManager` field — no `corepack enable` needed
+  # (the previous prefix hit "Cannot find module .../corepack/.../pnpm.cjs"
+  # because corepack couldn't download the pinned pnpm on Netlify).
   # `--frozen-lockfile` keeps CI builds reproducible.
   # `pnpm build` compiles packages/* then apps/* (apps/web produces the
   # static bundle that Netlify serves).
-  command   = "corepack enable && pnpm install --frozen-lockfile && pnpm build"
+  command   = "pnpm install --frozen-lockfile && pnpm build"
   publish   = "apps/web/dist"
   functions = "netlify/functions"
 
 [build.environment]
-  # Overrides the repo's .nvmrc (v25.2.1 — Netlify build image doesn't ship
-  # Node 25). Node 22 has `node:sqlite` (added in 22.5) and native fetch.
-  NODE_VERSION = "22"
+  # Matches .nvmrc. Node 24 ships stable `node:sqlite` and native fetch.
+  NODE_VERSION = "24"
 
 [functions]
   # esbuild bundles workspace imports (apps/api/src/*, packages/core/*,
