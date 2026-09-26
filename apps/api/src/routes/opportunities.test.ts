@@ -151,6 +151,8 @@ function makeCtx(repos: ReturnType<typeof createRepositories>): AppContext {
     aiProvider: 'rules',
     gridProvider: 'demo',
     gridProviderReason: 'test',
+    databaseProvider: 'sqlite',
+    databaseProviderReason: 'test',
   };
   return {
     repos,
@@ -164,7 +166,7 @@ function makeCtx(repos: ReturnType<typeof createRepositories>): AppContext {
     dossierService,
     wiring,
     buildOfflineRunService: () => runService,
-    resetDb: () => undefined,
+    resetDb: async () => undefined,
   };
 }
 

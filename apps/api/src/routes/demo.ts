@@ -43,7 +43,7 @@ export function demoRoutes(ctx: AppContext) {
    * Wipe every row from every table so the demo starts clean.
    */
   app.post('/demo/reset', async (c) => {
-    ctx.resetDb();
+    await ctx.resetDb();
     return c.json({ ok: true });
   });
 

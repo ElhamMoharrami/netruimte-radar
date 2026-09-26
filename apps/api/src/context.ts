@@ -22,7 +22,7 @@ import {
   type GridContextProvider,
   type SourceDiscoveryProvider,
 } from '@netruimte/core';
-import { openDb, createRepositories, type Db } from './persistence/index.js';
+import { openDb, openLibsqlDb, createRepositories, type Db } from './persistence/index.js';
 
 export interface AppContext {
   repos: Repositories;
@@ -38,10 +38,11 @@ export interface AppContext {
   /** Build a demo-provider variant of this context (V9 offline mode). */
   buildOfflineRunService(): AutonomousRunService;
   /** Wipe every row in every table. Only exposed for demo controls. */
-  resetDb(): void;
+  resetDb(): Promise<void>;
 }
 
 export type GridProvider = 'demo' | 'netbeheer-nl';
+export type DatabaseProvider = 'sqlite' | 'turso';
 
 export interface WiringReport {
   demoMode: boolean;
@@ -54,6 +55,8 @@ export interface WiringReport {
   automationProviderReason: string;
   gridProvider: GridProvider;
   gridProviderReason: string;
+  databaseProvider: DatabaseProvider;
+  databaseProviderReason: string;
   notificationAllowlist: number;
   scheduledEndpointEnabled: boolean;
 }
@@ -73,13 +76,47 @@ export interface CreateContextOptions {
 const here = dirname(fileURLToPath(import.meta.url));
 const DEMO_SOURCES_DIR = resolve(here, '../../../data/demo/sources');
 
-export function createContext(opts: CreateContextOptions = {}): AppContext {
-  const sqlitePath = opts.sqlitePath ?? process.env.SQLITE_PATH ?? ':memory:';
-  const db = openDb({ path: sqlitePath });
-  const repos = createRepositories(db);
+export async function createContext(opts: CreateContextOptions = {}): Promise<AppContext> {
   const demoMode = opts.demoMode ?? (process.env.DEMO_MODE ?? 'true').toLowerCase() === 'true';
   const serviceToken = process.env.SERVICE_TOKEN?.trim() || null;
   const notificationAllowlist = parseAllowlist(process.env.NOTIFICATION_ALLOWLIST);
+
+  // --- Database ------------------------------------------------------------
+  // Selection order:
+  //   1. DATABASE_PROVIDER env var (explicit).
+  //   2. Auto: presence of TURSO_DATABASE_URL → turso, else sqlite.
+  // The libsql adapter is required in production on Netlify Functions because
+  // each invocation gets its own container — an in-memory node:sqlite db can
+  // hold a scan's output but the very next request lands on a different
+  // instance and sees an empty DB.
+  const providerEnv = process.env.DATABASE_PROVIDER?.trim().toLowerCase();
+  const wantsTurso =
+    providerEnv === 'turso' ||
+    (providerEnv === undefined && Boolean(process.env.TURSO_DATABASE_URL));
+  let db: Db;
+  let databaseProvider: DatabaseProvider;
+  let databaseProviderReason: string;
+  if (wantsTurso) {
+    const url = process.env.TURSO_DATABASE_URL?.trim();
+    if (!url) {
+      throw new Error(
+        'DATABASE_PROVIDER=turso but TURSO_DATABASE_URL is not set. Configure a libsql:// URL from the Turso dashboard.',
+      );
+    }
+    db = await openLibsqlDb({ url, authToken: process.env.TURSO_AUTH_TOKEN?.trim() });
+    databaseProvider = 'turso';
+    databaseProviderReason = providerEnv
+      ? 'DATABASE_PROVIDER=turso'
+      : 'auto — TURSO_DATABASE_URL present';
+  } else {
+    const sqlitePath = opts.sqlitePath ?? process.env.SQLITE_PATH ?? ':memory:';
+    db = openDb({ path: sqlitePath });
+    databaseProvider = 'sqlite';
+    databaseProviderReason = providerEnv
+      ? `DATABASE_PROVIDER=sqlite (path=${sqlitePath})`
+      : `auto — no TURSO_DATABASE_URL (path=${sqlitePath})`;
+  }
+  const repos = createRepositories(db);
 
   const wiring: WiringReport = {
     demoMode,
@@ -92,6 +129,8 @@ export function createContext(opts: CreateContextOptions = {}): AppContext {
     automationProviderReason: '',
     gridProvider: 'demo',
     gridProviderReason: '',
+    databaseProvider,
+    databaseProviderReason,
     notificationAllowlist: notificationAllowlist.length,
     scheduledEndpointEnabled: Boolean(serviceToken),
   };
@@ -282,18 +321,25 @@ export function createContext(opts: CreateContextOptions = {}): AppContext {
   };
 }
 
-function resetDb(db: Db): void {
-  db.exec(`
-    DELETE FROM action_queue;
-    DELETE FROM decisions;
-    DELETE FROM activity_log;
-    DELETE FROM dossiers;
-    DELETE FROM run_history;
-    DELETE FROM opportunities;
-    DELETE FROM signals;
-    DELETE FROM evidence;
-    DELETE FROM companies;
-  `);
+async function resetDb(db: Db): Promise<void> {
+  // libsql doesn't guarantee multi-statement execution semantics on plain
+  // execute(), so issue each DELETE individually. Order matters for the
+  // FK constraints in schema.ts.
+  const tables = [
+    'action_queue',
+    'decisions',
+    'activity_log',
+    'dossiers',
+    'run_history',
+    'opportunities',
+    'signals',
+    'evidence',
+    'grid_events',
+    'companies',
+  ];
+  for (const t of tables) {
+    await db.execute(`DELETE FROM ${t}`);
+  }
 }
 
 function parseAllowlist(raw: string | undefined): string[] {

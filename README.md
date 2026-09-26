@@ -191,16 +191,91 @@ Netlify → Site configuration → Environment variables:
 | `ANTHROPIC_API_KEY` | Required with `AI_PROVIDER=anthropic`. |
 | `GEMINI_API_KEY` | Required with `AI_PROVIDER=gemini`. |
 | `GRID_PROVIDER` | `demo` \| `netbeheer-nl` (unset → auto — `demo` when `DEMO_MODE=true`, else `netbeheer-nl`). |
+| `DATABASE_PROVIDER` | `sqlite` \| `turso` (unset → auto — `turso` if `TURSO_DATABASE_URL` set, else `sqlite`). **Production on Netlify MUST use `turso`** — see below. |
+| `TURSO_DATABASE_URL` | libSQL URL (`libsql://<name>-<org>.turso.io`) from the Turso dashboard. Required when `DATABASE_PROVIDER=turso`. |
+| `TURSO_AUTH_TOKEN` | Auth JWT scoped to that database. Required for `libsql://` URLs. |
 | `N8N_BASE_URL` | Enables `N8nAutomationClient`. If unset in production mode, actions are logged but never dispatched. |
 | `N8N_WEBHOOK_TOKEN` | Optional shared secret sent on `x-n8n-token`. |
 | `NOTIFICATION_ALLOWLIST` | Comma-separated internal recipients allowed to receive `notify_stakeholder`. Empty → notifications are refused. **Never put scraped businesses here.** |
 | `DEMO_MODE` | `true` (deterministic providers) or `false` (real integrations required). Defaults to `true`. |
 
-**Do not set `SQLITE_PATH` on Netlify.** The default (`:memory:`) is the
-only path that works on the read-only Lambda filesystem. Each Lambda
-instance gets an in-memory database; warm invocations on the same instance
-share it, cold starts don't. Persistent storage would require an external DB
-(D1, Postgres, Turso, …) and is out of scope for the hackathon deploy.
+### Production persistence — Turso is required on Netlify
+
+Netlify Functions run each request in a Lambda that may be a cold container.
+`node:sqlite :memory:` therefore cannot hold state across requests: a scan
+writes to one container's DB and the very next dashboard request lands on a
+different container and sees nothing. Production **must** use Turso/libSQL
+so every function invocation reads and writes the same durable database.
+
+Setup — one time per environment:
+
+```bash
+# 1) install the Turso CLI (macOS)
+brew install tursodatabase/tap/turso
+turso auth login
+
+# 2) create the database and grab its URL + a scoped auth token
+turso db create netruimte-radar-prod          # or any name
+turso db show netruimte-radar-prod --url      # → libsql://…-<org>.turso.io
+turso db tokens create netruimte-radar-prod   # → paste as TURSO_AUTH_TOKEN
+
+# (optional) open a SQL shell against it
+turso db shell netruimte-radar-prod
+```
+
+Set these Netlify environment variables (Site configuration → Environment
+variables → Add a variable):
+
+| Variable | Value |
+|---|---|
+| `DATABASE_PROVIDER` | `turso` |
+| `TURSO_DATABASE_URL` | `libsql://…-<org>.turso.io` from step 2 |
+| `TURSO_AUTH_TOKEN` | JWT from `turso db tokens create` |
+
+**Schema initialization is automatic.** The libSQL adapter runs the full
+`SCHEMA_SQL` on every cold start (`CREATE TABLE IF NOT EXISTS …`), so no
+separate migration command is needed — deploy the function and the tables
+exist on first request. To reset the schema manually:
+
+```bash
+turso db shell netruimte-radar-prod < apps/api/src/persistence/schema.sql  # not required
+# or drop-and-let-recreate:
+turso db shell netruimte-radar-prod "DROP TABLE grid_events; …"
+```
+
+**Do not set `SQLITE_PATH` on Netlify** — it is ignored when
+`DATABASE_PROVIDER=turso`, and Netlify's Lambda filesystem outside `/tmp` is
+read-only anyway.
+
+Verifying persistence across two separate requests:
+
+```bash
+BASE=https://<your-site>.netlify.app
+TOKEN=<your SERVICE_TOKEN>
+
+# Request 1 — trigger a scan (writes grid events + activity + run history to Turso)
+curl -sf -X POST -H "X-Service-Token: $TOKEN" $BASE/api/runs/scheduled | jq .summary
+# → { sourcesDiscovered: 3, gridUpdatesDetected: 3, failures: 0, incomplete: false }
+
+# Request 2 — read from a different Lambda invocation (dashboard fetch)
+curl -sf $BASE/api/grid-events?limit=6 | jq '.data | length'
+# → 3   ← proves cross-invocation persistence
+
+curl -sf $BASE/api/runs?limit=5   | jq '.data | length'
+# → ≥ 1
+
+curl -sf $BASE/api/activity/recent | jq '.data | length'
+# → many
+
+curl -sf $BASE/api/wiring | jq '.databaseProvider, .databaseProviderReason'
+# → "turso"
+# → "DATABASE_PROVIDER=turso"  (or "auto — TURSO_DATABASE_URL present")
+```
+
+If step-2's `data.length` is `0` after step-1 succeeded, either
+`DATABASE_PROVIDER` is not set to `turso`, or the two Netlify Function
+invocations are still hitting different in-memory sqlite dbs — check
+`/api/wiring` first.
 
 Frontend never sees any of these — Vite exposes only `VITE_*` prefixed vars,
 and this project defines none.

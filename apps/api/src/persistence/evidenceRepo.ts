@@ -29,18 +29,16 @@ function toDomain(row: Row): Evidence {
   });
 }
 
-export function createEvidenceRepository(db: Db): EvidenceRepository {
-  const insertStmt = db.prepare(`
-    INSERT INTO evidence (id, company_id, source_url, source_title, source_type, excerpt, detected_at, published_at, raw_text_hash, confidence)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const byId = db.prepare(`SELECT * FROM evidence WHERE id = ?`);
-  const byCompany = db.prepare(`SELECT * FROM evidence WHERE company_id = ? ORDER BY detected_at DESC`);
+const INSERT_SQL = `
+  INSERT INTO evidence (id, company_id, source_url, source_title, source_type, excerpt, detected_at, published_at, raw_text_hash, confidence)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
 
+export function createEvidenceRepository(db: Db): EvidenceRepository {
   return {
     async insert(evidence) {
       const e = EvidenceSchema.parse(evidence);
-      insertStmt.run(
+      await db.execute(INSERT_SQL, [
         e.id,
         e.companyId,
         e.sourceUrl,
@@ -51,15 +49,18 @@ export function createEvidenceRepository(db: Db): EvidenceRepository {
         e.publishedAt,
         e.rawTextHash,
         e.confidence,
-      );
+      ]);
       return e;
     },
     async findById(id) {
-      const row = byId.get(id) as unknown as Row | undefined;
+      const row = await db.get<Row>(`SELECT * FROM evidence WHERE id = ?`, [id]);
       return row ? toDomain(row) : null;
     },
     async listByCompany(companyId) {
-      const rows = byCompany.all(companyId) as unknown as Row[];
+      const rows = await db.all<Row>(
+        `SELECT * FROM evidence WHERE company_id = ? ORDER BY detected_at DESC`,
+        [companyId],
+      );
       return rows.map(toDomain);
     },
   };

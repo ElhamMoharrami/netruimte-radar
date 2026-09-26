@@ -25,18 +25,16 @@ function toDomain(row: Row): Signal {
   });
 }
 
-export function createSignalRepository(db: Db): SignalRepository {
-  const insertStmt = db.prepare(`
-    INSERT INTO signals (id, company_id, evidence_ids, type, description, estimated_impact_class, confidence, detected_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const byId = db.prepare(`SELECT * FROM signals WHERE id = ?`);
-  const byCompany = db.prepare(`SELECT * FROM signals WHERE company_id = ? ORDER BY detected_at DESC`);
+const INSERT_SQL = `
+  INSERT INTO signals (id, company_id, evidence_ids, type, description, estimated_impact_class, confidence, detected_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`;
 
+export function createSignalRepository(db: Db): SignalRepository {
   return {
     async insert(signal) {
       const s = SignalSchema.parse(signal);
-      insertStmt.run(
+      await db.execute(INSERT_SQL, [
         s.id,
         s.companyId,
         JSON.stringify(s.evidenceIds),
@@ -45,15 +43,18 @@ export function createSignalRepository(db: Db): SignalRepository {
         s.estimatedImpactClass,
         s.confidence,
         s.detectedAt,
-      );
+      ]);
       return s;
     },
     async findById(id) {
-      const row = byId.get(id) as unknown as Row | undefined;
+      const row = await db.get<Row>(`SELECT * FROM signals WHERE id = ?`, [id]);
       return row ? toDomain(row) : null;
     },
     async listByCompany(companyId) {
-      const rows = byCompany.all(companyId) as unknown as Row[];
+      const rows = await db.all<Row>(
+        `SELECT * FROM signals WHERE company_id = ? ORDER BY detected_at DESC`,
+        [companyId],
+      );
       return rows.map(toDomain);
     },
   };

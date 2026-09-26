@@ -72,6 +72,11 @@ export default function Layout() {
                   value={wiring.automationProvider}
                   tone={wiring.automationProvider === 'n8n' ? 'ok' : 'warn'}
                 />
+                <WiringPill
+                  label="db"
+                  value={wiring.databaseProvider}
+                  tone={wiring.databaseProvider === 'turso' ? 'ok' : 'warn'}
+                />
               </>
             )}
           </div>

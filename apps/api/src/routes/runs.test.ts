@@ -47,6 +47,8 @@ function buildContext(db: Db): AppContext {
     aiProvider: 'rules',
     gridProvider: 'demo',
     gridProviderReason: 'test',
+    databaseProvider: 'sqlite',
+    databaseProviderReason: 'test',
   };
   return {
     repos,
@@ -60,7 +62,7 @@ function buildContext(db: Db): AppContext {
     dossierService,
     wiring,
     buildOfflineRunService: () => runService,
-    resetDb: () => undefined,
+    resetDb: async () => undefined,
   };
 }
 

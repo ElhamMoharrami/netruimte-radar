@@ -9,6 +9,8 @@ export interface WiringReport {
   automationProviderReason: string;
   gridProvider: 'demo' | 'netbeheer-nl';
   gridProviderReason: string;
+  databaseProvider: 'sqlite' | 'turso';
+  databaseProviderReason: string;
   notificationAllowlist: number;
   scheduledEndpointEnabled: boolean;
 }

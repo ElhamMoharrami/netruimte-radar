@@ -62,6 +62,8 @@ function buildCtx(db: Db, opts: BuildOpts = {}): AppContext {
     aiProvider: 'rules' as const,
     gridProvider: 'demo' as const,
     gridProviderReason: 'test',
+    databaseProvider: 'sqlite' as const,
+    databaseProviderReason: 'test',
   };
   return {
     repos,
@@ -75,7 +77,7 @@ function buildCtx(db: Db, opts: BuildOpts = {}): AppContext {
     dossierService,
     wiring,
     buildOfflineRunService: () => runService,
-    resetDb: () => undefined,
+    resetDb: async () => undefined,
   };
 }
 

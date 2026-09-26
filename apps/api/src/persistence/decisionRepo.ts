@@ -21,21 +21,30 @@ function toDomain(row: Row): Decision {
   });
 }
 
-export function createDecisionRepository(db: Db): DecisionRepository {
-  const insertStmt = db.prepare(`
-    INSERT INTO decisions (id, opportunity_id, decision_type, reason, policy_version, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-  const byOpp = db.prepare(`SELECT * FROM decisions WHERE opportunity_id = ? ORDER BY created_at ASC`);
+const INSERT_SQL = `
+  INSERT INTO decisions (id, opportunity_id, decision_type, reason, policy_version, created_at)
+  VALUES (?, ?, ?, ?, ?, ?)
+`;
 
+export function createDecisionRepository(db: Db): DecisionRepository {
   return {
     async insert(decision) {
       const d = DecisionSchema.parse(decision);
-      insertStmt.run(d.id, d.opportunityId, d.decisionType, d.reason, d.policyVersion, d.createdAt);
+      await db.execute(INSERT_SQL, [
+        d.id,
+        d.opportunityId,
+        d.decisionType,
+        d.reason,
+        d.policyVersion,
+        d.createdAt,
+      ]);
       return d;
     },
     async listByOpportunity(opportunityId) {
-      const rows = byOpp.all(opportunityId) as unknown as Row[];
+      const rows = await db.all<Row>(
+        `SELECT * FROM decisions WHERE opportunity_id = ? ORDER BY created_at ASC`,
+        [opportunityId],
+      );
       return rows.map(toDomain);
     },
   };

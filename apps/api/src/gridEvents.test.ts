@@ -60,6 +60,8 @@ function makeCtx(
     aiProvider: 'rules',
     gridProvider: 'demo',
     gridProviderReason: 'test',
+    databaseProvider: 'sqlite',
+    databaseProviderReason: 'test',
   };
   return {
     repos,
@@ -73,7 +75,7 @@ function makeCtx(
     dossierService: { getForOpportunity: async () => null } as unknown as AppContext['dossierService'],
     wiring,
     buildOfflineRunService: () => runService,
-    resetDb: () => undefined,
+    resetDb: async () => undefined,
   };
 }
 

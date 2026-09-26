@@ -31,26 +31,23 @@ function toDomain(row: Row): Opportunity {
   });
 }
 
-export function createOpportunityRepository(db: Db): OpportunityRepository {
-  const insertStmt = db.prepare(`
-    INSERT INTO opportunities (id, company_id, signal_ids, status, score, confidence, congestion_context, grid_neighbor_status, recommended_next_step, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const updateStmt = db.prepare(`
-    UPDATE opportunities SET
-      signal_ids=?, status=?, score=?, confidence=?,
-      congestion_context=?, grid_neighbor_status=?, recommended_next_step=?,
-      updated_at=?
-    WHERE id=?
-  `);
-  const byId = db.prepare(`SELECT * FROM opportunities WHERE id = ?`);
-  const byCompany = db.prepare(`SELECT * FROM opportunities WHERE company_id = ? ORDER BY updated_at DESC`);
-  const listStmt = db.prepare(`SELECT * FROM opportunities ORDER BY updated_at DESC`);
+const INSERT_SQL = `
+  INSERT INTO opportunities (id, company_id, signal_ids, status, score, confidence, congestion_context, grid_neighbor_status, recommended_next_step, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
+const UPDATE_SQL = `
+  UPDATE opportunities SET
+    signal_ids=?, status=?, score=?, confidence=?,
+    congestion_context=?, grid_neighbor_status=?, recommended_next_step=?,
+    updated_at=?
+  WHERE id=?
+`;
 
+export function createOpportunityRepository(db: Db): OpportunityRepository {
   return {
     async insert(opportunity) {
       const o = OpportunitySchema.parse(opportunity);
-      insertStmt.run(
+      await db.execute(INSERT_SQL, [
         o.id,
         o.companyId,
         JSON.stringify(o.signalIds),
@@ -62,12 +59,12 @@ export function createOpportunityRepository(db: Db): OpportunityRepository {
         o.recommendedNextStep,
         o.createdAt,
         o.updatedAt,
-      );
+      ]);
       return o;
     },
     async update(opportunity) {
       const o = OpportunitySchema.parse(opportunity);
-      updateStmt.run(
+      await db.execute(UPDATE_SQL, [
         JSON.stringify(o.signalIds),
         o.status,
         o.score,
@@ -77,19 +74,22 @@ export function createOpportunityRepository(db: Db): OpportunityRepository {
         o.recommendedNextStep,
         o.updatedAt,
         o.id,
-      );
+      ]);
       return o;
     },
     async findById(id) {
-      const row = byId.get(id) as unknown as Row | undefined;
+      const row = await db.get<Row>(`SELECT * FROM opportunities WHERE id = ?`, [id]);
       return row ? toDomain(row) : null;
     },
     async findByCompany(companyId) {
-      const rows = byCompany.all(companyId) as unknown as Row[];
+      const rows = await db.all<Row>(
+        `SELECT * FROM opportunities WHERE company_id = ? ORDER BY updated_at DESC`,
+        [companyId],
+      );
       return rows.map(toDomain);
     },
     async list() {
-      const rows = listStmt.all() as unknown as Row[];
+      const rows = await db.all<Row>(`SELECT * FROM opportunities ORDER BY updated_at DESC`);
       return rows.map(toDomain);
     },
   };

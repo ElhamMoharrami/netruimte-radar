@@ -25,33 +25,37 @@ function toDomain(row: Row): ActivityLog {
   });
 }
 
-export function createActivityLogRepository(db: Db): ActivityLogRepository {
-  const insertStmt = db.prepare(`
-    INSERT INTO activity_log (id, opportunity_id, event_type, message, metadata, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-  const byOpp = db.prepare(`SELECT * FROM activity_log WHERE opportunity_id = ? ORDER BY created_at ASC`);
-  const recent = db.prepare(`SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?`);
+const INSERT_SQL = `
+  INSERT INTO activity_log (id, opportunity_id, event_type, message, metadata, created_at)
+  VALUES (?, ?, ?, ?, ?, ?)
+`;
 
+export function createActivityLogRepository(db: Db): ActivityLogRepository {
   return {
     async append(log) {
       const l = ActivityLogSchema.parse(log);
-      insertStmt.run(
+      await db.execute(INSERT_SQL, [
         l.id,
         l.opportunityId,
         l.eventType,
         l.message,
         l.metadata ? JSON.stringify(l.metadata) : null,
         l.createdAt,
-      );
+      ]);
       return l;
     },
     async listByOpportunity(opportunityId) {
-      const rows = byOpp.all(opportunityId) as unknown as Row[];
+      const rows = await db.all<Row>(
+        `SELECT * FROM activity_log WHERE opportunity_id = ? ORDER BY created_at ASC`,
+        [opportunityId],
+      );
       return rows.map(toDomain);
     },
     async listRecent(limit = 100) {
-      const rows = recent.all(limit) as unknown as Row[];
+      const rows = await db.all<Row>(
+        `SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?`,
+        [limit],
+      );
       return rows.map(toDomain);
     },
   };

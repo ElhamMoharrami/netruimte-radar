@@ -35,31 +35,24 @@ function toDomain(row: Row): QueuedAction {
   });
 }
 
-export function createActionQueueRepository(db: Db): ActionQueueRepository {
-  const enqueueStmt = db.prepare(`
-    INSERT INTO action_queue (
-      id, opportunity_id, action_type, status, attempts, reason, metadata,
-      last_error, created_at, updated_at, dispatched_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const updateStmt = db.prepare(`
-    UPDATE action_queue SET
-      action_type=?, status=?, attempts=?, reason=?, metadata=?,
-      last_error=?, updated_at=?, dispatched_at=?
-    WHERE id=?
-  `);
-  const byId = db.prepare(`SELECT * FROM action_queue WHERE id = ?`);
-  const byOpp = db.prepare(
-    `SELECT * FROM action_queue WHERE opportunity_id = ? ORDER BY created_at ASC`,
-  );
-  const byStatus = db.prepare(
-    `SELECT * FROM action_queue WHERE status = ? ORDER BY created_at ASC`,
-  );
+const ENQUEUE_SQL = `
+  INSERT INTO action_queue (
+    id, opportunity_id, action_type, status, attempts, reason, metadata,
+    last_error, created_at, updated_at, dispatched_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
+const UPDATE_SQL = `
+  UPDATE action_queue SET
+    action_type=?, status=?, attempts=?, reason=?, metadata=?,
+    last_error=?, updated_at=?, dispatched_at=?
+  WHERE id=?
+`;
 
+export function createActionQueueRepository(db: Db): ActionQueueRepository {
   return {
     async enqueue(action) {
       const a = QueuedActionSchema.parse(action);
-      enqueueStmt.run(
+      await db.execute(ENQUEUE_SQL, [
         a.id,
         a.opportunityId,
         a.actionType,
@@ -71,12 +64,12 @@ export function createActionQueueRepository(db: Db): ActionQueueRepository {
         a.createdAt,
         a.updatedAt,
         a.dispatchedAt,
-      );
+      ]);
       return a;
     },
     async update(action) {
       const a = QueuedActionSchema.parse(action);
-      updateStmt.run(
+      await db.execute(UPDATE_SQL, [
         a.actionType,
         a.status,
         a.attempts,
@@ -86,19 +79,25 @@ export function createActionQueueRepository(db: Db): ActionQueueRepository {
         a.updatedAt,
         a.dispatchedAt,
         a.id,
-      );
+      ]);
       return a;
     },
     async findById(id) {
-      const row = byId.get(id) as unknown as Row | undefined;
+      const row = await db.get<Row>(`SELECT * FROM action_queue WHERE id = ?`, [id]);
       return row ? toDomain(row) : null;
     },
     async listByOpportunity(opportunityId) {
-      const rows = byOpp.all(opportunityId) as unknown as Row[];
+      const rows = await db.all<Row>(
+        `SELECT * FROM action_queue WHERE opportunity_id = ? ORDER BY created_at ASC`,
+        [opportunityId],
+      );
       return rows.map(toDomain);
     },
     async listByStatus(status) {
-      const rows = byStatus.all(status) as unknown as Row[];
+      const rows = await db.all<Row>(
+        `SELECT * FROM action_queue WHERE status = ? ORDER BY created_at ASC`,
+        [status],
+      );
       return rows.map(toDomain);
     },
   };

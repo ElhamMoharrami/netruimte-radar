@@ -31,12 +31,16 @@
   # esbuild bundles workspace imports (apps/api/src/*, packages/core/*,
   # packages/shared/*) into the function output.
   node_bundler = "esbuild"
-  # Ship the AI SDKs as external deps so the bundle stays small; they're
-  # only loaded when a matching AI_PROVIDER is set.
+  # Ship SDKs as external deps so the bundle stays small.
+  #   - AI SDKs: only loaded when a matching AI_PROVIDER is set.
+  #   - @libsql/client: ships platform-specific optional deps
+  #     (@libsql/linux-x64-gnu etc.); esbuild cannot bundle those correctly,
+  #     so keep it external and let Netlify install it from node_modules.
   external_node_modules = [
     "@anthropic-ai/sdk",
     "openai",
     "@google/generative-ai",
+    "@libsql/client",
   ]
 
 # ─── Routing ─────────────────────────────────────────────────────────────────

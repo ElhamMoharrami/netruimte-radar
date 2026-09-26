@@ -47,23 +47,21 @@ function toDomain(row: Row): RunHistory {
   });
 }
 
-export function createRunHistoryRepository(db: Db): RunHistoryRepository {
-  const insertStmt = db.prepare(`
-    INSERT INTO run_history (
-      id, trigger, source_provider, extractor, automation_provider,
-      started_at, finished_at,
-      sources_discovered, companies_processed, signals_detected,
-      opportunities_created, actions_dispatched, actions_blocked,
-      failures, incomplete, decisions, notes
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const byId = db.prepare(`SELECT * FROM run_history WHERE id = ?`);
-  const listStmt = db.prepare(`SELECT * FROM run_history ORDER BY started_at DESC LIMIT ?`);
+const INSERT_SQL = `
+  INSERT INTO run_history (
+    id, trigger, source_provider, extractor, automation_provider,
+    started_at, finished_at,
+    sources_discovered, companies_processed, signals_detected,
+    opportunities_created, actions_dispatched, actions_blocked,
+    failures, incomplete, decisions, notes
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
 
+export function createRunHistoryRepository(db: Db): RunHistoryRepository {
   return {
     async insert(run) {
       const r = RunHistorySchema.parse(run);
-      insertStmt.run(
+      await db.execute(INSERT_SQL, [
         r.id,
         r.trigger,
         r.sourceProvider,
@@ -81,15 +79,18 @@ export function createRunHistoryRepository(db: Db): RunHistoryRepository {
         r.incomplete ? 1 : 0,
         JSON.stringify(r.decisions),
         r.notes,
-      );
+      ]);
       return r;
     },
     async findById(id) {
-      const row = byId.get(id) as unknown as Row | undefined;
+      const row = await db.get<Row>(`SELECT * FROM run_history WHERE id = ?`, [id]);
       return row ? toDomain(row) : null;
     },
     async list(limit = 100) {
-      const rows = listStmt.all(limit) as unknown as Row[];
+      const rows = await db.all<Row>(
+        `SELECT * FROM run_history ORDER BY started_at DESC LIMIT ?`,
+        [limit],
+      );
       return rows.map(toDomain);
     },
   };

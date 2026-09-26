@@ -4,7 +4,7 @@ import { createContext } from './context.js';
 
 describe('api/health', () => {
   it('returns ok', async () => {
-    const ctx = createContext({
+    const ctx = await createContext({
       sqlitePath: ':memory:',
       demoMode: true,
     });

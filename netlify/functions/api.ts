@@ -20,36 +20,58 @@
  *
  * Environment variables:
  *   - All server-side secrets (SERVICE_TOKEN, APIFY_TOKEN, *_API_KEY,
- *     N8N_WEBHOOK_TOKEN, …) are read exclusively via `process.env` inside
- *     this function process at cold start.
+ *     N8N_WEBHOOK_TOKEN, TURSO_AUTH_TOKEN, …) are read exclusively via
+ *     `process.env` inside this function process at cold start.
  *   - Nothing here is exported to the frontend bundle; Vite only exposes
  *     `VITE_*` prefixed variables, and none exist in this project.
  *
  * State:
- *   - The current AppContext uses `node:sqlite`. On Netlify Functions the
- *     filesystem outside `/tmp` is read-only, so `SQLITE_PATH` should be
- *     left unset (defaults to `:memory:`). This means each Lambda instance
- *     gets its own in-memory database. Warm invocations on the same
- *     instance share state; cold starts don't. This is acceptable for the
- *     hackathon demo — n8n POSTs a run and reads the summary from the
- *     same response — but is documented in README.
+ *   - When `DATABASE_PROVIDER=turso` (with `TURSO_DATABASE_URL` +
+ *     `TURSO_AUTH_TOKEN`), all persistence targets the shared libSQL
+ *     database, so cold-started function instances observe the same rows
+ *     that were written by earlier invocations. This is the required
+ *     production configuration on Netlify — every scan writes to Turso,
+ *     every dashboard read fetches from Turso.
+ *   - Falling back to node:sqlite uses each Lambda's own in-memory DB and
+ *     is only appropriate for local `netlify dev`.
+ *
+ * Lazy init:
+ *   - Context creation is async (libsql schema init). We build it lazily on
+ *     the first request and cache the Promise so warm invocations skip the
+ *     handshake. A failed init rethrows on the *next* request too so any
+ *     misconfiguration surfaces immediately.
  */
-import { createApp } from '../../apps/api/src/app.js';
+import { createApp, type App } from '../../apps/api/src/app.js';
 import { createContext } from '../../apps/api/src/context.js';
 
-const ctx = createContext();
-const app = createApp(ctx);
+let appP: Promise<App> | null = null;
 
-app.get('/api/health', (c) =>
-  c.json({
-    status: 'ok',
-    service: 'netruimte-radar-api',
-    demoMode: ctx.demoMode,
-    time: new Date().toISOString(),
-  }),
-);
+async function getApp(): Promise<App> {
+  if (!appP) {
+    appP = (async () => {
+      const ctx = await createContext();
+      const app = createApp(ctx);
+      app.get('/api/health', (c) =>
+        c.json({
+          status: 'ok',
+          service: 'netruimte-radar-api',
+          demoMode: ctx.demoMode,
+          databaseProvider: ctx.wiring.databaseProvider,
+          time: new Date().toISOString(),
+        }),
+      );
+      return app;
+    })().catch((err) => {
+      // Reset so the next request re-attempts init — otherwise a transient
+      // libsql handshake failure would poison the container permanently.
+      appP = null;
+      throw err;
+    });
+  }
+  return appP;
+}
 
-export default (request: Request) => app.fetch(request);
+export default async (request: Request) => (await getApp()).fetch(request);
 
 export const config = {
   path: '/api/*',

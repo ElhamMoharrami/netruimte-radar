@@ -1,8 +1,4 @@
-import {
-  GridEventSchema,
-  type GridEvent,
-  type GridEventRepository,
-} from '@netruimte/shared';
+import { GridEventSchema, type GridEvent, type GridEventRepository } from '@netruimte/shared';
 import type { Db } from './db.js';
 
 interface Row {
@@ -41,27 +37,19 @@ function toDomain(row: Row): GridEvent {
   });
 }
 
-export function createGridEventRepository(db: Db): GridEventRepository {
-  const insertStmt = db.prepare(`
-    INSERT INTO grid_events (
-      id, operator, event_type, regions, municipalities, stations,
-      direction, summary, evidence_excerpt, source_url,
-      published_at, detected_at, confidence, content_hash
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const byId = db.prepare(`SELECT * FROM grid_events WHERE id = ?`);
-  const byUrl = db.prepare(
-    `SELECT * FROM grid_events WHERE source_url = ? ORDER BY detected_at DESC LIMIT 1`,
-  );
-  const byUrlAndHash = db.prepare(
-    `SELECT * FROM grid_events WHERE source_url = ? AND content_hash = ? LIMIT 1`,
-  );
-  const listStmt = db.prepare(`SELECT * FROM grid_events ORDER BY detected_at DESC LIMIT ?`);
+const INSERT_SQL = `
+  INSERT INTO grid_events (
+    id, operator, event_type, regions, municipalities, stations,
+    direction, summary, evidence_excerpt, source_url,
+    published_at, detected_at, confidence, content_hash
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
 
+export function createGridEventRepository(db: Db): GridEventRepository {
   return {
     async insert(event) {
       const e = GridEventSchema.parse(event);
-      insertStmt.run(
+      await db.execute(INSERT_SQL, [
         e.id,
         e.operator,
         e.eventType,
@@ -76,23 +64,32 @@ export function createGridEventRepository(db: Db): GridEventRepository {
         e.detectedAt,
         e.confidence,
         e.contentHash,
-      );
+      ]);
       return e;
     },
     async findById(id) {
-      const row = byId.get(id) as unknown as Row | undefined;
+      const row = await db.get<Row>(`SELECT * FROM grid_events WHERE id = ?`, [id]);
       return row ? toDomain(row) : null;
     },
     async findLatestBySourceUrl(sourceUrl) {
-      const row = byUrl.get(sourceUrl) as unknown as Row | undefined;
+      const row = await db.get<Row>(
+        `SELECT * FROM grid_events WHERE source_url = ? ORDER BY detected_at DESC LIMIT 1`,
+        [sourceUrl],
+      );
       return row ? toDomain(row) : null;
     },
     async findBySourceAndHash(sourceUrl, contentHash) {
-      const row = byUrlAndHash.get(sourceUrl, contentHash) as unknown as Row | undefined;
+      const row = await db.get<Row>(
+        `SELECT * FROM grid_events WHERE source_url = ? AND content_hash = ? LIMIT 1`,
+        [sourceUrl, contentHash],
+      );
       return row ? toDomain(row) : null;
     },
     async list(limit = 100) {
-      const rows = listStmt.all(limit) as unknown as Row[];
+      const rows = await db.all<Row>(
+        `SELECT * FROM grid_events ORDER BY detected_at DESC LIMIT ?`,
+        [limit],
+      );
       return rows.map(toDomain);
     },
   };
