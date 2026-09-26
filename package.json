@@ -21,6 +21,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
     "@google/generative-ai": "^0.24.1",
+    "@libsql/client": "^0.18.0",
     "@netruimte/core": "workspace:*",
     "@netruimte/shared": "workspace:*",
     "hono": "^4.6.14",

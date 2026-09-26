@@ -172,6 +172,9 @@ importers:
       '@google/generative-ai':
         specifier: ^0.24.1
         version: 0.24.1
+      '@libsql/client':
+        specifier: ^0.18.0
+        version: 0.18.0
       '@netruimte/core':
         specifier: workspace:*
         version: link:packages/core

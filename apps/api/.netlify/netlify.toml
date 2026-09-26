@@ -1,0 +1,45 @@
+redirectsOrigin = "config"
+plugins = []
+functionsDirectory = "/Users/elham/workspace/netruimte-radar/netlify/functions"
+functionsDirectoryOrigin = "config-v1"
+headers = []
+
+[functions]
+
+[functions."*"]
+external_node_modules = ["@anthropic-ai/sdk", "openai", "@google/generative-ai", "@libsql/client"]
+node_bundler = "esbuild"
+
+[build]
+publish = "/Users/elham/workspace/netruimte-radar/apps/web/dist"
+publishOrigin = "config"
+commandOrigin = "config"
+command = "pnpm install --frozen-lockfile && pnpm build"
+functions = "/Users/elham/workspace/netruimte-radar/netlify/functions"
+
+[build.environment]
+NODE_VERSION = "24"
+
+[build.processing]
+
+[build.processing.css]
+
+[build.processing.html]
+
+[build.processing.images]
+
+[build.processing.js]
+
+[build.services]
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200.0
+force = false
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]
