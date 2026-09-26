@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppContext } from './context.js';
-import { activityRoutes, opportunitiesRoutes } from './routes/opportunities.js';
+import { activityRoutes, companiesRoutes, opportunitiesRoutes } from './routes/opportunities.js';
 import { runsRoutes } from './routes/runs.js';
 import { demoRoutes } from './routes/demo.js';
 import { gridEventsRoutes } from './routes/gridEvents.js';
@@ -26,6 +26,7 @@ export function createApp(ctx: AppContext) {
 
   app.route('/api', opportunitiesRoutes(ctx));
   app.route('/api', activityRoutes(ctx));
+  app.route('/api', companiesRoutes(ctx));
   app.route('/api', runsRoutes(ctx));
   app.route('/api', demoRoutes(ctx));
   app.route('/api', gridEventsRoutes(ctx));

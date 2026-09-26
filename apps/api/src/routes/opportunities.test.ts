@@ -248,4 +248,21 @@ describe('API routes with seeded autonomous run', () => {
     // Most recent first.
     expect(body.data[0]?.eventType).toBe('DOSSIER_CREATED');
   });
+
+  /**
+   * GET /api/companies feeds the Radar dashboard's "Businesses monitored"
+   * tile. The count must reflect only real businesses ingested by the
+   * business_signal pipeline — grid-operator sources (Liander/Enexis/Stedin)
+   * must not appear here.
+   */
+  it('lists companies for the businesses-monitored dashboard tile', async () => {
+    await seedAutonomousRun(db);
+    const repos = createRepositories(db);
+    const app = createApp(makeCtx(repos));
+    const res = await app.request('/api/companies');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Array<{ name: string }> };
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0]?.name).toBe('Van Rijn Logistics');
+  });
 });

@@ -3,12 +3,28 @@ import { Link } from 'react-router-dom';
 import {
   api,
   type ActivityEntry,
+  type CompanyDto,
   type GridEventDto,
   type OpportunitySummary,
   type RunResponse,
 } from '../api.js';
 import { GridEventCard } from '../components/GridEventCard.js';
 import { GridTopologyDisclaimer } from '../components/GridTopologyDisclaimer.js';
+
+/**
+ * Recent-window for activity-log-derived counters. The activity table can grow
+ * unboundedly, so we cap the fetch — signals/actions counts are therefore
+ * "recent" (within the last N entries) rather than lifetime totals. 500 is
+ * the API's max and gives comfortable headroom over a demo scan burst.
+ */
+const ACTIVITY_WINDOW = 500;
+
+/**
+ * Fetch enough grid events to cover the dashboard "sources monitored" count.
+ * The API caps at 500, which is well above the number of Dutch grid-operator
+ * pages we monitor.
+ */
+const GRID_FETCH_LIMIT = 500;
 
 const EVENT_ICON: Record<string, string> = {
   SCAN_STARTED: '⏱',
@@ -33,6 +49,7 @@ const EVENT_ICON: Record<string, string> = {
 export default function RadarPage() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [opportunities, setOpportunities] = useState<OpportunitySummary[]>([]);
+  const [companies, setCompanies] = useState<CompanyDto[]>([]);
   const [gridEvents, setGridEvents] = useState<GridEventDto[]>([]);
   const [running, setRunning] = useState(false);
   const [lastRun, setLastRun] = useState<RunResponse | null>(null);
@@ -40,13 +57,15 @@ export default function RadarPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const [act, opps, ge] = await Promise.all([
-        api.recentActivity(80),
+      const [act, opps, cos, ge] = await Promise.all([
+        api.recentActivity(ACTIVITY_WINDOW),
         api.opportunities(),
-        api.gridEvents(6),
+        api.companies(),
+        api.gridEvents(GRID_FETCH_LIMIT),
       ]);
       setActivity(act);
       setOpportunities(opps);
+      setCompanies(cos);
       setGridEvents(ge);
     } catch (e) {
       setError((e as Error).message);
@@ -73,15 +92,16 @@ export default function RadarPage() {
     }
   }
 
-  const metrics = deriveMetrics(opportunities, activity, lastRun);
+  const metrics = deriveMetrics({ opportunities, companies, activity, gridEvents });
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Metric label="Businesses monitored" value={metrics.businesses} />
-        <Metric label="New signals" value={metrics.newSignals} />
-        <Metric label="Potential constraints" value={metrics.potentialConstraints} accent />
-        <Metric label="Promising opportunities" value={metrics.promising} accent />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <Metric label="Grid sources monitored" value={metrics.gridSourcesMonitored} />
+        <Metric label="Grid updates detected" value={metrics.gridUpdatesDetected} />
+        <Metric label="Businesses monitored" value={metrics.businessesMonitored} />
+        <Metric label="Business signals detected" value={metrics.businessSignalsDetected} />
+        <Metric label="Promising opportunities" value={metrics.promisingOpportunities} accent />
         <Metric label="Actions taken" value={metrics.actionsTaken} />
       </div>
 
@@ -123,7 +143,7 @@ export default function RadarPage() {
           </div>
         ) : (
           <ul className="space-y-2">
-            {gridEvents.map((ge) => (
+            {gridEvents.slice(0, 6).map((ge) => (
               <li key={ge.id}>
                 <GridEventCard event={ge} variant="compact" />
               </li>
@@ -143,7 +163,7 @@ export default function RadarPage() {
           </div>
         ) : (
           <ol className="space-y-1">
-            {activity.map((entry) => (
+            {activity.slice(0, 80).map((entry) => (
               <li
                 key={entry.id}
                 className="flex items-start gap-3 px-3 py-2 border-l border-slate-800 hover:bg-slate-900/40 rounded-r"
@@ -207,19 +227,49 @@ function formatTime(iso: string): string {
   return `${hh}:${mm}:${ss}`;
 }
 
-function deriveMetrics(
-  opportunities: OpportunitySummary[],
-  activity: ActivityEntry[],
-  lastRun: RunResponse | null,
-) {
-  const businesses = new Set(opportunities.map((o) => o.companyId)).size;
-  const newSignals = activity.filter((a) => a.eventType === 'SIGNAL_DETECTED').length;
-  const potentialConstraints = opportunities.filter(
-    (o) => o.congestionContext && ['high', 'severe'].includes(o.congestionContext.level),
-  ).length;
-  const promising = opportunities.filter((o) => o.status === 'promising').length;
-  const actionsTaken =
-    lastRun?.summary.actionsDispatched ??
-    activity.filter((a) => a.eventType === 'ACTION_DISPATCHED').length;
-  return { businesses, newSignals, potentialConstraints, promising, actionsTaken };
+/**
+ * Every value on the metric row is derived from persisted state fetched at
+ * `refresh` time — no hardcoded counters, no last-run session state that
+ * disappears on page reload.
+ *
+ *   - gridSourcesMonitored   ← distinct sourceUrl in persisted grid_events.
+ *                              (grid_events is the only pipeline sink that
+ *                              writes rows for Liander/Enexis/Stedin pages —
+ *                              audit-verified.)
+ *   - gridUpdatesDetected    ← count of persisted grid_events.
+ *   - businessesMonitored    ← count of persisted companies. Companies are
+ *                              only created on the business_signal pipeline
+ *                              path — Liander/Enexis/Stedin pages are
+ *                              architecturally excluded (see
+ *                              apps/api/src/sourceClassification.audit.test.ts).
+ *   - businessSignalsDetected← count of SIGNAL_DETECTED activity entries
+ *                              (business path only; grid path emits
+ *                              GRID_UPDATE_DETECTED instead).
+ *   - promisingOpportunities ← opportunities with status='promising'.
+ *   - actionsTaken           ← count of ACTION_DISPATCHED activity entries.
+ *                              Deliberately NOT falling back to
+ *                              lastRun.summary — that resets on page reload
+ *                              and would jump around visually.
+ */
+function deriveMetrics(input: {
+  opportunities: OpportunitySummary[];
+  companies: CompanyDto[];
+  activity: ActivityEntry[];
+  gridEvents: GridEventDto[];
+}) {
+  const { opportunities, companies, activity, gridEvents } = input;
+  const gridSourcesMonitored = new Set(gridEvents.map((e) => e.sourceUrl)).size;
+  const gridUpdatesDetected = gridEvents.length;
+  const businessesMonitored = companies.length;
+  const businessSignalsDetected = activity.filter((a) => a.eventType === 'SIGNAL_DETECTED').length;
+  const promisingOpportunities = opportunities.filter((o) => o.status === 'promising').length;
+  const actionsTaken = activity.filter((a) => a.eventType === 'ACTION_DISPATCHED').length;
+  return {
+    gridSourcesMonitored,
+    gridUpdatesDetected,
+    businessesMonitored,
+    businessSignalsDetected,
+    promisingOpportunities,
+    actionsTaken,
+  };
 }

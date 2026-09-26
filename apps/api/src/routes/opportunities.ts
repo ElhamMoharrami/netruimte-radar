@@ -79,3 +79,20 @@ export function activityRoutes(ctx: AppContext) {
   });
   return app;
 }
+
+/**
+ * GET /api/companies
+ * The list of businesses the radar has ingested. Companies are only created
+ * on the business_signal pipeline path (audit-verified in
+ * apps/api/src/sourceClassification.audit.test.ts), so Liander / Enexis /
+ * Stedin grid-operator pages never appear here — this is the authoritative
+ * "businesses monitored" count for the Radar dashboard.
+ */
+export function companiesRoutes(ctx: AppContext) {
+  const app = new Hono();
+  app.get('/companies', async (c) => {
+    const list = await ctx.repos.companies.list();
+    return c.json({ data: list });
+  });
+  return app;
+}

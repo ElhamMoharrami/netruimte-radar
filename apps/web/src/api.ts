@@ -264,6 +264,8 @@ export const api = {
   wiring: () => jsonFetch<WiringReport>('/api/wiring'),
   opportunities: () =>
     jsonFetch<{ data: OpportunitySummary[] }>('/api/opportunities').then((r) => r.data),
+  companies: () =>
+    jsonFetch<{ data: CompanyDto[] }>('/api/companies').then((r) => r.data),
   opportunity: (id: string) => jsonFetch<OpportunityDetail>(`/api/opportunities/${id}`),
   activityFor: (id: string) =>
     jsonFetch<{ activity: ActivityEntry[] }>(`/api/opportunities/${id}/activity`).then(
