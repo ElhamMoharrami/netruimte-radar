@@ -6,6 +6,7 @@ import { runsRoutes } from './routes/runs.js';
 import { demoRoutes } from './routes/demo.js';
 import { gridEventsRoutes } from './routes/gridEvents.js';
 import { adminDiagnosticsRoutes } from './routes/adminDiagnostics.js';
+import { adminN8nSmokeTestRoutes } from './routes/adminN8nSmokeTest.js';
 
 /**
  * Build the Hono app around an injected {@link AppContext}. The autonomous-run
@@ -33,6 +34,8 @@ export function createApp(ctx: AppContext) {
   app.route('/api', gridEventsRoutes(ctx));
   // TEMPORARY — remove after the mis-attributed-failures investigation closes.
   app.route('/api', adminDiagnosticsRoutes(ctx));
+  // TEMPORARY — remove immediately after n8n dispatch is confirmed working.
+  app.route('/api', adminN8nSmokeTestRoutes(ctx));
 
   return app;
 }
