@@ -58,6 +58,9 @@ function ctxWithToken(db: Db, serviceToken: string | null): AppContext {
     gridProviderReason: 'test',
     databaseProvider: 'sqlite',
     databaseProviderReason: 'test',
+    automationWebhookConfigured: false,
+    automationWebhookHost: null,
+    automationWebhookPath: null,
   };
   return {
     db,

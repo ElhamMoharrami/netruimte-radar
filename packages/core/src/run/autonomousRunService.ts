@@ -725,6 +725,33 @@ export class AutonomousRunService {
   ): Promise<QueuedAction | null> {
     const actionType = dispatchableAction(policyDecision.decision);
     if (!actionType) return null;
+
+    // Suppress duplicates: if this opportunity already has an equivalent
+    // queued action (same actionType) that is either still pending or has
+    // reached terminal `failed` state, do not create another row. Without
+    // this, every scheduled run that produces the same policy decision
+    // would pile up new `pending` rows for an already-failing target,
+    // repeatedly re-hitting the dispatcher.
+    const existing = await this.deps.repos.actionQueue.listByOpportunity(opportunity.id);
+    const duplicate = existing.find(
+      (q) => q.actionType === actionType && (q.status === 'pending' || q.status === 'failed'),
+    );
+    if (duplicate) {
+      await this.logger.log('ACTION_BLOCKED', {
+        opportunityId: opportunity.id,
+        message: `Action ${actionType} not enqueued: existing ${duplicate.status} action ${duplicate.id}`,
+        metadata: {
+          runId,
+          actionType,
+          reason: 'duplicate_suppressed',
+          existingActionId: duplicate.id,
+          existingStatus: duplicate.status,
+          existingAttempts: duplicate.attempts,
+        },
+      });
+      return null;
+    }
+
     const now = this.now();
     const queued: QueuedAction = {
       id: newId.activity(),

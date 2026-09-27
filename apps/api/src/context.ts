@@ -60,6 +60,15 @@ export interface WiringReport {
   sourceProviderReason: string;
   automationProvider: string;
   automationProviderReason: string;
+  /** True when N8N_ACTION_WEBHOOK_URL is set and a client was built for it. */
+  automationWebhookConfigured: boolean;
+  /**
+   * Host+pathname of the configured n8n webhook — host and path only, no
+   * query string, no token, no credentials. Null when not configured.
+   * Exposed so /api/wiring can confirm deployment target without curl-ing n8n.
+   */
+  automationWebhookHost: string | null;
+  automationWebhookPath: string | null;
   gridProvider: GridProvider;
   gridProviderReason: string;
   databaseProvider: DatabaseProvider;
@@ -134,6 +143,9 @@ export async function createContext(opts: CreateContextOptions = {}): Promise<Ap
     sourceProviderReason: '',
     automationProvider: '',
     automationProviderReason: '',
+    automationWebhookConfigured: false,
+    automationWebhookHost: null,
+    automationWebhookPath: null,
     gridProvider: 'demo',
     gridProviderReason: '',
     databaseProvider,
@@ -263,22 +275,38 @@ export async function createContext(opts: CreateContextOptions = {}): Promise<Ap
 
   // --- Automation ----------------------------------------------------------
   let automation: AutomationProvider;
+  const actionWebhookUrl = process.env.N8N_ACTION_WEBHOOK_URL?.trim();
+  const legacyBaseUrl = process.env.N8N_BASE_URL?.trim();
   if (opts.overrides?.automation) {
     automation = opts.overrides.automation;
     wiring.automationProvider = automation.name;
     wiring.automationProviderReason = 'test override';
-  } else if (process.env.N8N_BASE_URL) {
-    automation = new N8nAutomationClient({
-      baseUrl: process.env.N8N_BASE_URL,
+  } else if (actionWebhookUrl) {
+    const n8n = new N8nAutomationClient({
+      webhookUrl: actionWebhookUrl,
       webhookToken: process.env.N8N_WEBHOOK_TOKEN,
       notificationAllowlist,
     });
+    automation = n8n;
+    const summary = n8n.webhookSummary();
     wiring.automationProvider = 'n8n';
-    wiring.automationProviderReason = `N8N_BASE_URL present, allowlist=${notificationAllowlist.length}`;
+    wiring.automationProviderReason = `N8N_ACTION_WEBHOOK_URL configured (${summary.host}${summary.pathname}), allowlist=${notificationAllowlist.length}`;
+    wiring.automationWebhookConfigured = true;
+    wiring.automationWebhookHost = summary.host;
+    wiring.automationWebhookPath = summary.pathname;
+  } else if (legacyBaseUrl) {
+    // Legacy N8N_BASE_URL was the source of the "n8n webhook failed: 404"
+    // outage — it derived per-action paths that never existed. Refuse to
+    // start the client on the legacy var so operators are forced to
+    // migrate; fall through to a disabled provider with a clear reason.
+    automation = new DisabledAutomationProvider();
+    wiring.automationProvider = 'disabled';
+    wiring.automationProviderReason =
+      'N8N_BASE_URL is deprecated (caused per-action-path 404s). Set N8N_ACTION_WEBHOOK_URL to the single production webhook URL instead.';
   } else if (demoMode) {
     automation = new LocalAutomationProvider();
     wiring.automationProvider = 'local';
-    wiring.automationProviderReason = 'DEMO_MODE=true, no N8N_BASE_URL';
+    wiring.automationProviderReason = 'DEMO_MODE=true, no N8N_ACTION_WEBHOOK_URL';
   } else {
     automation = new DisabledAutomationProvider();
     wiring.automationProvider = 'disabled';

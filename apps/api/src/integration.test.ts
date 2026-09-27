@@ -64,6 +64,9 @@ function buildCtx(db: Db, opts: BuildOpts = {}): AppContext {
     gridProviderReason: 'test',
     databaseProvider: 'sqlite' as const,
     databaseProviderReason: 'test',
+    automationWebhookConfigured: false,
+    automationWebhookHost: null,
+    automationWebhookPath: null,
   };
   return {
     db,

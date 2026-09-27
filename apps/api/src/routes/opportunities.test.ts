@@ -153,6 +153,9 @@ function makeCtx(db: Db, repos: ReturnType<typeof createRepositories>): AppConte
     gridProviderReason: 'test',
     databaseProvider: 'sqlite',
     databaseProviderReason: 'test',
+    automationWebhookConfigured: false,
+    automationWebhookHost: null,
+    automationWebhookPath: null,
   };
   return {
     db,

@@ -62,6 +62,9 @@ function makeCtx(
     gridProviderReason: 'test',
     databaseProvider: 'sqlite',
     databaseProviderReason: 'test',
+    automationWebhookConfigured: false,
+    automationWebhookHost: null,
+    automationWebhookPath: null,
   };
   return {
     db,

@@ -7,6 +7,9 @@ export interface WiringReport {
   sourceProviderReason: string;
   automationProvider: string;
   automationProviderReason: string;
+  automationWebhookConfigured?: boolean;
+  automationWebhookHost?: string | null;
+  automationWebhookPath?: string | null;
   gridProvider: 'demo' | 'netbeheer-nl';
   gridProviderReason: string;
   databaseProvider: 'sqlite' | 'turso';
